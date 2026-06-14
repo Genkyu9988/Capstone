@@ -1,0 +1,30 @@
+# Virtual environment
+capstone/bin/
+capstone/include/
+capstone/lib/
+capstone/pyvenv.cfg
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Django
+db.sqlite3
+*.sqlite3
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Mac
+.DS_Store

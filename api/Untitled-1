@@ -1,0 +1,12 @@
+"""
+tasklerimiz ikiye ayrılıyor,
+ arıza ve bakım olarak.
+ Aynı şekilde teknisyenler de ikiye ayrılıyor. 
+ Herkes kendi birimine bakıyor.
+  Bakımcı olanlar 3 tip bakıma göre bakım planına dahil
+   olcaklar, arızacılar da anlık olarak gelen arızalara yakınlık durumuna göre atancak. 
+   Tech type' dan kasıt asansör ve yürüyen merdiven ayrımı mı?
+    Eğer öyle değilse onu eklemek lazım. 
+  Experience level neden eklediniz? 5 tip arıza,
+   3 tip bakım var database' e eklenmesi gerekiyor mu? 
+   Ayrıca arızalardan sonra arızaların takibi için "follow up" dediğimiz bi olay var. İsterlerse arıza takibi yapılacak, teknisyenlerin planına dahil edilecek., Bizim akışımız kısaca şöyle gurobiye çalışan verileri, ünite verileri, amaç fonksiyonu ve kısıtlamaları vererek optimizasyon yapıcaz. Ordan çıkan veri teknisyenlerin uygulamasına haftalık plan olarak, supervisor ve managerın ise webten erişimi olacak
