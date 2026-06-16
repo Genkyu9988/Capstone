@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Technician app (mobile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/mobile/main.dart"
+    },
+    {
+      "name": "Supervisor dashboard (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/web/supervisor_dashboard.dart",
+      "deviceId": "chrome"
+    },
+    {
+      "name": "Anil Galeri (mobile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/Gallery/anil_galeri.dart"
+    },
+    {
+      "name": "Anil Admin (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/AdminWeb/anil_admin.dart",
+      "deviceId": "chrome"
+    }
+  ]
+}
+
+//flutter emulators --launch Pixel_9_Pro_X
+//flutter devices
+//emulator-5554
+//flutter run -d emulator-5554 -t lib/mobile/main.dart
+//flutter run -d emulator-5554 -t lib/Gallery/anil_galeri.dart
+//http://localhost:8080/api/vehicles
+//flutter run -d chrome -t lib/AdminWeb/anil_admin.dart
+//flutter run -d chrome -t lib/web/supervisor_dashboard.dart
+//python manage.py runserver
+//python manage.py runserver 0.0.0.0:8000
+//a4aebe1c2011cb61fb0462f7ce2c6c721a2e463f

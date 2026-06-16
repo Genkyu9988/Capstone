@@ -1,30 +1,35 @@
-# Virtual environment
-capstone/bin/
-capstone/include/
-capstone/lib/
-capstone/pyvenv.cfg
+# ===== Python / Django =====
+.venv/
 venv/
 env/
-
-# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Django
-db.sqlite3
-*.sqlite3
-
-# Environment
-.env
-
-# IDE
-.vscode/
-.idea/
-
-# Logs
 *.log
 
-# Mac
+# ===== Databases =====
+# ignore scratch / backup sqlite files...
+*.sqlite3
+# ...but keep the seeded demo database:
+!db.sqlite3
+
+# ===== Secrets =====
+.env
+gurobi.lic
+gurobi
+
+# ===== Flutter / Dart build artifacts =====
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# ===== IDE =====
+.idea/
+.vscode/*
+!.vscode/launch.json
+
+# ===== OS =====
 .DS_Store
+Thumbs.db
