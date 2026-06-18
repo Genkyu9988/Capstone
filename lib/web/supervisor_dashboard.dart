@@ -22,6 +22,7 @@ import 'dart:convert';
 import 'dart:html' as html; // web download of the exported .xlsx
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'generate_schedule_tab.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -31,6 +32,9 @@ import 'package:latlong2/latlong.dart';
 // The token is now obtained at runtime from the /api/login/ flow (see
 // LoginScreen below). It starts empty and is filled in after a successful login.
 const String kBaseUrl = 'http://localhost:8000';
+// Full-schedule tabs ask the report endpoints with this as-of date, which lifts
+// the operating-clock "hide the future" clamp and reveals the entire plan.
+const String kFullAsOf = 'all';
 String kSupervisorToken = '';          // set after login
 String kSupervisorName = 'Supervisor'; // set after login (from /api/me/)
 const Duration kPollInterval = Duration(seconds: 5);
@@ -508,11 +512,10 @@ class ApiClient {
     return (j['message'] ?? 'Technician removed.').toString();
   }
 
-  Future<List<Map<String, dynamic>>> fetchReportMonths() async {
-    final r = await http.get(
-      Uri.parse('$kBaseUrl/api/reports/months/'),
-      headers: _headers,
-    );
+  Future<List<Map<String, dynamic>>> fetchReportMonths({String asOf = ''}) async {
+    final uri = Uri.parse('$kBaseUrl/api/reports/months/').replace(
+        queryParameters: {if (asOf.isNotEmpty) 'as_of': asOf});
+    final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
       throw Exception('GET /api/reports/months/ -> ${r.statusCode}: ${r.body}');
     }
@@ -522,9 +525,11 @@ class ApiClient {
         .toList();
   }
 
-  Future<Map<String, dynamic>> fetchMonthlyReport(int year, int month) async {
+  Future<Map<String, dynamic>> fetchMonthlyReport(int year, int month,
+      {String asOf = ''}) async {
+    final base = '$kBaseUrl/api/reports/monthly/?year=$year&month=$month';
     final r = await http.get(
-      Uri.parse('$kBaseUrl/api/reports/monthly/?year=$year&month=$month'),
+      Uri.parse(asOf.isNotEmpty ? '$base&as_of=$asOf' : base),
       headers: _headers,
     );
     if (r.statusCode != 200) {
@@ -537,12 +542,13 @@ class ApiClient {
       '$kBaseUrl/api/reports/monthly/export/?year=$year&month=$month';
 
   Future<Map<String, dynamic>> fetchUnitHistorySummary(
-      {String search = '', int page = 1, int pageSize = 50}) async {
+      {String search = '', int page = 1, int pageSize = 50, String asOf = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/units/history/').replace(
         queryParameters: {
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
           'page_size': '$pageSize',
+          if (asOf.isNotEmpty) 'as_of': asOf,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -551,9 +557,11 @@ class ApiClient {
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> fetchUnitHistoryDetail(int unitId) async {
+  Future<Map<String, dynamic>> fetchUnitHistoryDetail(int unitId,
+      {String asOf = ''}) async {
+    final base = '$kBaseUrl/api/units/$unitId/history/';
     final r = await http.get(
-      Uri.parse('$kBaseUrl/api/units/$unitId/history/'),
+      Uri.parse(asOf.isNotEmpty ? '$base?as_of=$asOf' : base),
       headers: _headers,
     );
     if (r.statusCode != 200) {
@@ -565,12 +573,13 @@ class ApiClient {
   String unitHistoryExportUrl() => '$kBaseUrl/api/units/history/export/';
 
   Future<Map<String, dynamic>> fetchMaintenanceOverview(
-      {String type = '', String search = '', int page = 1}) async {
+      {String type = '', String search = '', int page = 1, String asOf = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/maintenance/').replace(
         queryParameters: {
           if (type.isNotEmpty) 'type': type,
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
+          if (asOf.isNotEmpty) 'as_of': asOf,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -580,12 +589,13 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchCallbackOverview(
-      {String priority = '', String search = '', int page = 1}) async {
+      {String priority = '', String search = '', int page = 1, String asOf = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/callbacks/').replace(
         queryParameters: {
           if (priority.isNotEmpty) 'priority': priority,
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
+          if (asOf.isNotEmpty) 'as_of': asOf,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -595,9 +605,12 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchMonthlyLog(
-      int year, int month, {int page = 1}) async {
+      int year, int month, {int page = 1, String asOf = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/monthly-log/').replace(
-        queryParameters: {'year': '$year', 'month': '$month', 'page': '$page'});
+        queryParameters: {
+          'year': '$year', 'month': '$month', 'page': '$page',
+          if (asOf.isNotEmpty) 'as_of': asOf,
+        });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
       throw Exception('GET monthly log -> ${r.statusCode}: ${r.body}');
@@ -606,11 +619,12 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchDailyReport(
-      {String date = '', String technicianId = ''}) async {
+      {String date = '', String technicianId = '', String asOf = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/daily-report/').replace(
         queryParameters: {
           if (date.isNotEmpty) 'date': date,
           if (technicianId.isNotEmpty) 'technician_id': technicianId,
+          if (asOf.isNotEmpty) 'as_of': asOf,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -713,6 +727,9 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     final tabs = <_TabDef>[
       _TabDef(const _NavItem(Icons.map_outlined, Icons.map, 'Live Map'),
           (st) => LiveMapView(state: st)),
+
+      _TabDef(const _NavItem(Icons.auto_awesome_outlined, Icons.auto_awesome, 'Generate Schedule'),
+          (st) => GenerateScheduleTab(baseUrl: kBaseUrl, token: kSupervisorToken)),    
       _TabDef(const _NavItem(Icons.engineering_outlined, Icons.engineering, 'Technicians'),
           (st) => TechniciansView(state: st, onChanged: () => _controller.refresh())),
       _TabDef(const _NavItem(Icons.event_busy_outlined, Icons.event_busy, 'Leave Requests'),
@@ -738,6 +755,64 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           (st) => DailyReportTab(activeDate: st.activeDate)),
     ];
     return tabs;
+  }
+
+  // The bottom rail group: full-schedule twins of the roll-date report tabs.
+  // Same widgets, fullSchedule: true -> they query with as-of = far future,
+  // which lifts the operating-clock clamp and shows the entire generated plan.
+  List<_TabDef> _fullTabsFor(DashboardState s) {
+    final unknown = s.technicians.isEmpty;
+    final showM = unknown || _hasMaintenance(s);
+    final showC = unknown || _hasCallback(s);
+    return <_TabDef>[
+      _TabDef(const _NavItem(Icons.assessment_outlined, Icons.assessment, 'Full · Report'),
+          (st) => MonthlyReportView(activeDate: st.activeDate, fullSchedule: true)),
+      _TabDef(const _NavItem(Icons.apartment_outlined, Icons.apartment, 'Full · Unit History'),
+          (st) => const UnitHistoryView(fullSchedule: true)),
+      if (showM)
+        _TabDef(const _NavItem(Icons.build_outlined, Icons.build, 'Full · Maintenance'),
+            (st) => const MaintenanceOverviewTab(fullSchedule: true)),
+      if (showC)
+        _TabDef(const _NavItem(Icons.report_problem_outlined, Icons.report_problem, 'Full · Callback'),
+            (st) => const CallbackOverviewTab(fullSchedule: true)),
+      _TabDef(const _NavItem(Icons.calendar_month_outlined, Icons.calendar_month, 'Full · Monthly Log'),
+          (st) => MonthlyLogTab(activeDate: st.activeDate, fullSchedule: true)),
+      _TabDef(const _NavItem(Icons.today_outlined, Icons.today, 'Full · Daily Report'),
+          (st) => DailyReportTab(activeDate: st.activeDate, fullSchedule: true)),
+    ];
+  }
+
+  // One vertical button in the bottom "full schedule" rail group.
+  Widget _fullRailButton(_TabDef t, int index, bool extended, Color primary) {
+    final selected = _selectedIndex == index;
+    final fg = selected ? primary : Colors.grey[700];
+    return InkWell(
+      onTap: () => setState(() => _selectedIndex = index),
+      child: Container(
+        width: double.infinity,
+        color: selected ? primary.withOpacity(0.10) : null,
+        padding: EdgeInsets.symmetric(
+            horizontal: extended ? 16 : 0, vertical: 10),
+        child: extended
+            ? Row(children: [
+                Icon(selected ? t.nav.selectedIcon : t.nav.icon, size: 22, color: fg),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(t.nav.label,
+                      style: TextStyle(
+                          color: fg,
+                          fontSize: 13,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.w400)),
+                ),
+              ])
+            : Tooltip(
+                message: t.nav.label,
+                child: Icon(selected ? t.nav.selectedIcon : t.nav.icon,
+                    size: 24, color: fg),
+              ),
+      ),
+    );
   }
 
   @override
@@ -769,7 +844,9 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
       animation: _controller,
       builder: (context, _) {
         final state = _controller.state;
-        final tabs = _tabsFor(state);
+        final top = _tabsFor(state);
+        final full = _fullTabsFor(state);
+        final tabs = [...top, ...full]; // one shared selection index space
         // keep the selected index in range as tabs appear/disappear
         if (_selectedIndex >= tabs.length) _selectedIndex = 0;
         return Scaffold(
@@ -792,34 +869,74 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        NavigationRail(
-                          backgroundColor: Colors.white,
-                          extended: extended,
-                          minExtendedWidth: 220,
-                          selectedIndex: _selectedIndex,
-                          labelType: extended
-                              ? NavigationRailLabelType.none
-                              : NavigationRailLabelType.all,
-                          onDestinationSelected: (i) =>
-                              setState(() => _selectedIndex = i),
-                          indicatorColor: primary.withOpacity(0.12),
-                          selectedIconTheme: IconThemeData(color: primary),
-                          selectedLabelTextStyle: TextStyle(
-                            color: primary,
-                            fontWeight: FontWeight.w600,
+                        SizedBox(
+                          width: extended ? 220 : 80,
+                          child: Container(
+                            color: Colors.white,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: NavigationRail(
+                                    backgroundColor: Colors.white,
+                                    extended: extended,
+                                    minExtendedWidth: 220,
+                                    // null when a bottom (full-schedule) tab is active
+                                    selectedIndex: _selectedIndex < top.length
+                                        ? _selectedIndex
+                                        : null,
+                                    labelType: extended
+                                        ? NavigationRailLabelType.none
+                                        : NavigationRailLabelType.all,
+                                    onDestinationSelected: (i) =>
+                                        setState(() => _selectedIndex = i),
+                                    indicatorColor: primary.withOpacity(0.12),
+                                    selectedIconTheme:
+                                        IconThemeData(color: primary),
+                                    selectedLabelTextStyle: TextStyle(
+                                      color: primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    unselectedIconTheme:
+                                        IconThemeData(color: Colors.grey[700]),
+                                    unselectedLabelTextStyle:
+                                        TextStyle(color: Colors.grey[700]),
+                                    destinations: [
+                                      for (final t in top)
+                                        NavigationRailDestination(
+                                          icon: Icon(t.nav.icon),
+                                          selectedIcon: Icon(t.nav.selectedIcon),
+                                          label: Text(t.nav.label),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const Divider(height: 1, thickness: 1),
+                                Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                      extended ? 16 : 0, 10, 0, 4),
+                                  child: extended
+                                      ? Row(children: [
+                                          Icon(Icons.all_inclusive,
+                                              size: 14, color: Colors.grey[500]),
+                                          const SizedBox(width: 6),
+                                          Text('FULL SCHEDULE',
+                                              style: TextStyle(
+                                                  fontSize: 11,
+                                                  letterSpacing: 1.0,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.grey[500])),
+                                        ])
+                                      : Center(
+                                          child: Icon(Icons.all_inclusive,
+                                              size: 18, color: Colors.grey[500])),
+                                ),
+                                for (int i = 0; i < full.length; i++)
+                                  _fullRailButton(full[i], top.length + i,
+                                      extended, primary),
+                                const SizedBox(height: 8),
+                              ],
+                            ),
                           ),
-                          unselectedIconTheme:
-                              IconThemeData(color: Colors.grey[700]),
-                          unselectedLabelTextStyle:
-                              TextStyle(color: Colors.grey[700]),
-                          destinations: [
-                            for (final t in tabs)
-                              NavigationRailDestination(
-                                icon: Icon(t.nav.icon),
-                                selectedIcon: Icon(t.nav.selectedIcon),
-                                label: Text(t.nav.label),
-                              ),
-                          ],
                         ),
                         Container(width: 1, color: Colors.grey[200]),
                         Expanded(
@@ -827,7 +944,13 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                             padding: const EdgeInsets.all(20),
                             child: _controller.loadingFirstTime
                                 ? const Center(child: CircularProgressIndicator())
-                                : tabs[_selectedIndex].body(state),
+                                : KeyedSubtree(
+                                    // distinct key per tab so a roll-date tab and
+                                    // its full-schedule twin (same widget type) get
+                                    // separate State and each runs initState/_load
+                                    key: ValueKey(_selectedIndex),
+                                    child: tabs[_selectedIndex].body(state),
+                                  ),
                           ),
                         ),
                       ],
@@ -2019,7 +2142,8 @@ class _TechniciansViewState extends State<TechniciansView> {
 
 class MonthlyReportView extends StatefulWidget {
   final DateTime activeDate;   // operating-clock day; nothing past it is shown
-  const MonthlyReportView({super.key, required this.activeDate});
+  final bool fullSchedule;     // true = ignore the clamp, show the whole plan
+  const MonthlyReportView({super.key, required this.activeDate, this.fullSchedule = false});
 
   @override
   State<MonthlyReportView> createState() => _MonthlyReportViewState();
@@ -2044,15 +2168,21 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
   Future<void> _loadMonths() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final months = await _api.fetchReportMonths();
-      // Hide any month after the operating-clock month — the frontend must not
-      // reveal the future. (The console can still query later months directly.)
-      final ad = widget.activeDate;
-      _months = months.where((m) {
-        final y = (m['year'] as num).toInt();
-        final mo = (m['month'] as num).toInt();
-        return y < ad.year || (y == ad.year && mo <= ad.month);
-      }).toList();
+      final months = await _api.fetchReportMonths(
+          asOf: widget.fullSchedule ? kFullAsOf : '');
+      if (widget.fullSchedule) {
+        // full plan: show every month the schedule covers, no future-hide
+        _months = months;
+      } else {
+        // Hide any month after the operating-clock month — the frontend must not
+        // reveal the future. (The console can still query later months directly.)
+        final ad = widget.activeDate;
+        _months = months.where((m) {
+          final y = (m['year'] as num).toInt();
+          final mo = (m['month'] as num).toInt();
+          return y < ad.year || (y == ad.year && mo <= ad.month);
+        }).toList();
+      }
       if (_months.isNotEmpty) {
         _selectedMonth = _months.last; // operating month (latest visible)
         await _loadReport();
@@ -2069,7 +2199,8 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     setState(() { _loading = true; _error = null; });
     try {
       final rep = await _api.fetchMonthlyReport(
-          _selectedMonth!['year'], _selectedMonth!['month']);
+          _selectedMonth!['year'], _selectedMonth!['month'],
+          asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _report = rep; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2320,7 +2451,8 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
 // =============================================================================
 
 class UnitHistoryView extends StatefulWidget {
-  const UnitHistoryView({super.key});
+  final bool fullSchedule;
+  const UnitHistoryView({super.key, this.fullSchedule = false});
 
   @override
   State<UnitHistoryView> createState() => _UnitHistoryViewState();
@@ -2357,7 +2489,8 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     setState(() { _loading = true; _error = null; });
     try {
       final s = await _api.fetchUnitHistorySummary(
-          search: _search, page: _page, pageSize: 50);
+          search: _search, page: _page, pageSize: 50,
+          asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _summary = s; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2371,7 +2504,8 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     }
     setState(() { _openUnitId = unitId; _detailLoading = true; _detail = null; });
     try {
-      final d = await _api.fetchUnitHistoryDetail(unitId);
+      final d = await _api.fetchUnitHistoryDetail(unitId,
+          asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _detail = d; _detailLoading = false; });
     } catch (e) {
       setState(() { _detailLoading = false; });
@@ -2731,7 +2865,8 @@ Widget _pagerBar(int total, int page, int pageSize, VoidCallback? onPrev, VoidCa
 
 // ---------------------------------------------------- Maintenance Overview
 class MaintenanceOverviewTab extends StatefulWidget {
-  const MaintenanceOverviewTab({super.key});
+  final bool fullSchedule;
+  const MaintenanceOverviewTab({super.key, this.fullSchedule = false});
   @override
   State<MaintenanceOverviewTab> createState() => _MaintenanceOverviewTabState();
 }
@@ -2754,7 +2889,9 @@ class _MaintenanceOverviewTabState extends State<MaintenanceOverviewTab> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final d = await _api.fetchMaintenanceOverview(type: _type, search: _search, page: _page);
+      final d = await _api.fetchMaintenanceOverview(
+          type: _type, search: _search, page: _page,
+          asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _data = d; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2819,7 +2956,8 @@ class _MaintenanceOverviewTabState extends State<MaintenanceOverviewTab> {
 
 // ---------------------------------------------------- Repair / Callback
 class CallbackOverviewTab extends StatefulWidget {
-  const CallbackOverviewTab({super.key});
+  final bool fullSchedule;
+  const CallbackOverviewTab({super.key, this.fullSchedule = false});
   @override
   State<CallbackOverviewTab> createState() => _CallbackOverviewTabState();
 }
@@ -2842,7 +2980,9 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final d = await _api.fetchCallbackOverview(priority: _priority, search: _search, page: _page);
+      final d = await _api.fetchCallbackOverview(
+          priority: _priority, search: _search, page: _page,
+          asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _data = d; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2917,7 +3057,8 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
 // ---------------------------------------------------- Monthly Log
 class MonthlyLogTab extends StatefulWidget {
   final DateTime activeDate;   // operating-clock day
-  const MonthlyLogTab({super.key, required this.activeDate});
+  final bool fullSchedule;
+  const MonthlyLogTab({super.key, required this.activeDate, this.fullSchedule = false});
   @override
   State<MonthlyLogTab> createState() => _MonthlyLogTabState();
 }
@@ -2942,7 +3083,8 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final d = await _api.fetchMonthlyLog(_year, _month, page: _page);
+      final d = await _api.fetchMonthlyLog(_year, _month, page: _page,
+          asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _data = d; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2967,9 +3109,11 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
               value: _month,
               items: [
                 for (int m = 1;
-                    m <= (_year == widget.activeDate.year
-                        ? widget.activeDate.month
-                        : 12);
+                    m <= (widget.fullSchedule
+                        ? 12
+                        : (_year == widget.activeDate.year
+                            ? widget.activeDate.month
+                            : 12));
                     m++)
                   DropdownMenuItem(value: m, child: Text('Month $m'))
               ],
@@ -2979,14 +3123,17 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
             DropdownButton<int>(
               value: _year,
               items: [
-                for (int y = 2025; y <= widget.activeDate.year; y++)
+                for (int y = 2025;
+                    y <= widget.activeDate.year + (widget.fullSchedule ? 1 : 0);
+                    y++)
                   DropdownMenuItem(value: y, child: Text('$y'))
               ],
               onChanged: (y) {
                 setState(() {
                   _year = y!;
                   // jumping to the operating year: don't allow a future month
-                  if (_year == widget.activeDate.year &&
+                  if (!widget.fullSchedule &&
+                      _year == widget.activeDate.year &&
                       _month > widget.activeDate.month) {
                     _month = widget.activeDate.month;
                   }
@@ -3022,7 +3169,8 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
 // ---------------------------------------------------- Daily Report
 class DailyReportTab extends StatefulWidget {
   final DateTime activeDate;   // operating-clock day
-  const DailyReportTab({super.key, required this.activeDate});
+  final bool fullSchedule;
+  const DailyReportTab({super.key, required this.activeDate, this.fullSchedule = false});
   @override
   State<DailyReportTab> createState() => _DailyReportTabState();
 }
@@ -3047,7 +3195,8 @@ class _DailyReportTabState extends State<DailyReportTab> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final d = await _api.fetchDailyReport(date: _date);
+      final d = await _api.fetchDailyReport(
+          date: _date, asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _data = d; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -3059,7 +3208,9 @@ class _DailyReportTabState extends State<DailyReportTab> {
       context: context,
       initialDate: DateTime.tryParse(_date) ?? widget.activeDate,
       firstDate: DateTime(2026, 1, 1),
-      lastDate: widget.activeDate, // can't look past the operating-clock day
+      lastDate: widget.fullSchedule
+          ? DateTime(2099, 12, 31) // full plan: any day in the generated schedule
+          : widget.activeDate,     // can't look past the operating-clock day
     );
     if (picked != null) {
       _date = _fmtDate(picked);

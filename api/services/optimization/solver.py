@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from api.models import OperationType
 
-from .optimizer_v4 import (
+from .optimizer_v5 import (
     SolverConfig,
     solve_maintenance_from_records,
     solve_breakdown_from_records,

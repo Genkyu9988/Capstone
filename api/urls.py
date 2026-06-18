@@ -1,7 +1,9 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from api.demo_showcase_views import ShowcaseRoutesView
+from .simulation_run_views import SimulationRunView
 from .location_views import MyLocationUpdateView
+from .clock_views import SetClockView
 from .views import MyOptimizedRouteView
 from .views import (
     SupervisorGroupViewSet,
@@ -80,6 +82,8 @@ urlpatterns = [
     path("simulation/demo-routes/", SimulationDemoRoutesView.as_view()),
     path("repair/panel/", RepairPanelView.as_view()),
     path("repair/dispatch/", RepairDispatchView.as_view()),
+    path("simulation/run/", SimulationRunView.as_view(), name="simulation-run"),
     path("repair/clear/", ClearRepairsView.as_view()),
     path("my-location/", MyLocationUpdateView.as_view(), name="my-location"),
+    path("clock/set/", SetClockView.as_view(), name="set-clock"),
 ]
