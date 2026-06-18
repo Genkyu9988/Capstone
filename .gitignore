@@ -33,3 +33,7 @@ build/
 # ===== OS =====
 .DS_Store
 Thumbs.db
+# runtime / machine-specific state
+.sim_jobs/
+.sim_clock.json
+.route_geometry_cache/
