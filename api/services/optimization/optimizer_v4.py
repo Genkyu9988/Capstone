@@ -725,6 +725,7 @@ def solve_maintenance(
     task_records:       Iterable[Mapping[str, Any]],
     travel_time_matrix: Optional[Mapping] = None,
     config:             SolverConfig = SolverConfig(),
+    prior_load:         Optional[Mapping[str, float]] = None,   # <-- add
 ) -> Dict[str, Any]:
     """
     v8 day-based maintenance planner.
@@ -860,13 +861,17 @@ def solve_maintenance(
                     # Score v12: önce teknisyenler arası yükü dengeler, sonra günü iyi doldurur.
                     # Eski skor en erken günü fazla önceliklendirdiği için bazı teknisyenler dolarken
                     # bazıları boş kalabiliyordu.
-                    monthly_used = sum(slots[(t, dd)]["used_min"] for dd in range(1, config.working_days_per_month + 1))
+                    prior_min = float(prior_load.get(str(t), 0.0)) if prior_load else 0.0
+                    monthly_used = prior_min + sum(slots[(t, dd)]["used_min"] for dd in range(1, config.working_days_per_month + 1))
+                    day_used_before = slot["used_min"]
                     remaining_after = int(REGULAR_DAILY_HOURS * 60) - sim["used_after"]
+                    started = 0 if day_used_before > 0 else 1
                     score = (
-                        monthly_used,           # önce en az yüklenmiş uygun teknisyen
-                        d,                      # sonra en erken gün
-                        remaining_after,        # sonra günü daha iyi dolduran seçenek
-                        travel_min,             # sonra daha düşük yol süresi
+                        started,   # PACK: finish a started technician-day first
+                        remaining_after,    # then the placement that fills the day fullest       
+                        d,                       # then the earliest day
+                        monthly_used,        # ROTATION: least-loaded tech opens a new day
+                        travel_min,              # then lower travel
                         str(t),
                     )
                     if best is None or score < best[0]:
@@ -2067,12 +2072,14 @@ def solve_maintenance_from_records(
     task_records,
     travel_time_matrix=None,
     config=SolverConfig(),
+     prior_load=None,                # <-- add
 ):
     return solve_maintenance(
         technician_records=technician_records,
         task_records=task_records,
         travel_time_matrix=travel_time_matrix,
         config=config,
+        prior_load=prior_load,      # <-- add
     )
 
 

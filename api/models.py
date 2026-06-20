@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time , timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -916,9 +916,9 @@ class UnitMaintenanceState(models.Model):
         verbose_name = "Unit Maintenance State"
         verbose_name_plural = "Unit Maintenance States"
 
-    C_DAYS = 30
-    B_DAYS = 180
-    A_DAYS = 360
+    C_DAYS = 28
+    B_DAYS = 168
+    A_DAYS = 336
 
     def due_type(self, on_date):
         def overdue(last, interval):
@@ -934,6 +934,8 @@ class UnitMaintenanceState(models.Model):
         return None
 
     def complete(self, mtype, on_date):
+        while on_date.weekday() >= 5:      # weekend completion -> next weekday
+            on_date += timedelta(days=1)
         if mtype == "A":
             self.last_a_date = on_date
             self.last_b_date = on_date

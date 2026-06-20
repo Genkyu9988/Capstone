@@ -13,6 +13,7 @@ called), runs your existing solve_with_gurobi, and writes the Schedule routes.
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+import json
 
 from api.models import (
     SupervisorGroup, Technician, Task, OptimizationRun, RunStatus,
@@ -31,6 +32,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("group_name", type=str, nargs="?", default="Demo Group")
+        parser.add_argument("--prior-load", type=str, default="{}")   # <-- add
 
     def handle(self, *args, **opts):
         name = opts["group_name"]
@@ -68,10 +70,17 @@ class Command(BaseCommand):
                 tt_time[(tech.id, task.id)] = km / SPEED_KMH
                 tt_dist[(tech.id, task.id)] = km
 
+        prior_load = {}
+        try:
+            prior_load = {str(k): float(v) for k, v in json.loads(opts.get("prior_load") or "{}").items()}
+        except Exception:
+            prior_load = {}
+
         input_data = {
             "tasks": tasks, "technicians": techs,
             "technician_task_travel_time": tt_time,
             "technician_task_travel_distance": tt_dist,
+            "prior_technician_load": prior_load,
         }
 
         self.stdout.write("Running Gurobi maintenance solve...")

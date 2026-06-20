@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from api.models import OperationType
 
-from .optimizer_v5 import (
+from .optimizer_v4 import (
     SolverConfig,
     solve_maintenance_from_records,
     solve_breakdown_from_records,
@@ -368,7 +368,7 @@ def solve_with_gurobi(input_data):
         "technician_task_travel_time",
         {}
     )
-
+    prior_load = input_data.get("prior_technician_load") or {}   # <-- add
     if not tasks or not technicians:
         return []
 
@@ -407,6 +407,7 @@ def solve_with_gurobi(input_data):
             task_records=maintenance_task_records,
             travel_time_matrix=maintenance_travel_time_matrix,
             config=config,
+            prior_load=prior_load,        # <-- add
         )
 
         final_results.extend(

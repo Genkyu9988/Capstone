@@ -62,34 +62,33 @@ class Command(BaseCommand):
 
     # ---------------------------------------------------------------- init
     def _init(self):
-        """Initialize maintenance clocks with PHASE-ALIGNED staggering.
+        """Seed maintenance clocks on WEEKDAYS only, phase-aligned.
 
-        Each unit gets a single phase position `p` in the yearly cycle. All
-        three clocks (A/B/C) are derived from `p` on a shared 30-day grid so
-        that B and A always fall ON a C boundary. This means when a B (or A)
-        comes due, the C is due the SAME day and supersession absorbs it --
-        eliminating the "C then B six days later" artifact that independent
-        staggering produced.
-
-        Grid: C=30 days, B=180 days (=6 C-cycles), A=360 days (=12 C-cycles).
+        Intervals are whole weeks (28/168/336), so a unit's due-date always
+        falls on the same weekday as its last-maintenance date. By seeding every
+        clock on Mon-Fri, no unit can ever come due on a weekend. B and A stay
+        nested on C boundaries (B = 6 C-cycles, A = 12 C-cycles).
         """
-        # aligned grid: read straight from the model so init and due_type can
-        # never drift apart. With B/A as multiples of C the cycles nest cleanly.
-        C_GRID = UnitMaintenanceState.C_DAYS   # 30
-        B_GRID = UnitMaintenanceState.B_DAYS   # 180
-        A_GRID = UnitMaintenanceState.A_DAYS   # 360
+        C_WEEKS = UnitMaintenanceState.C_DAYS // 7   # 4
+        B_WEEKS = UnitMaintenanceState.B_DAYS // 7   # 24
+        A_WEEKS = UnitMaintenanceState.A_DAYS // 7   # 48
+
+        today = date.today()
+
+        def weekday_anchor(weekday, weeks_ago):
+            # most recent `weekday` (0=Mon..4=Fri) on/before today, minus weeks_ago weeks
+            delta = (today.weekday() - weekday) % 7
+            return today - timedelta(days=delta) - timedelta(weeks=weeks_ago)
 
         units = list(Unit.objects.filter(is_active=True))
         self.stdout.write(f"Initializing maintenance state for {len(units)} units...")
-        today = date.today()
         created = 0
         for i, u in enumerate(units):
-            # one staggered phase per unit, across the full yearly cycle
-            p = i % A_GRID
-            # all clocks derived from the SAME phase, aligned to the 30-day grid
-            last_a = today - timedelta(days=p)
-            last_b = today - timedelta(days=(p % B_GRID))
-            last_c = today - timedelta(days=(p % C_GRID))
+            weekday = i % 5                 # Mon..Fri -> never a weekend
+            pw = (i // 5) % A_WEEKS         # week-phase across the yearly cycle
+            last_a = weekday_anchor(weekday, pw)
+            last_b = weekday_anchor(weekday, pw % B_WEEKS)
+            last_c = weekday_anchor(weekday, pw % C_WEEKS)
             UnitMaintenanceState.objects.update_or_create(
                 unit=u,
                 defaults={"last_a_date": last_a, "last_b_date": last_b,
@@ -97,7 +96,7 @@ class Command(BaseCommand):
             )
             created += 1
         self.stdout.write(self.style.SUCCESS(
-            f"Initialized {created} unit maintenance states (phase-aligned staggering)."))
+            f"Initialized {created} unit maintenance states (weekday-aligned)."))
 
     # ------------------------------------------------------------ generate
     def _generate(self, on_date):
