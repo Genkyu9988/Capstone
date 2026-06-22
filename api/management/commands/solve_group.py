@@ -7,7 +7,8 @@ Offline (no-Google) maintenance solve for ANY supervisor group.
     python manage.py solve_group "Emre Koç Group"
 
 Builds a haversine technician->task travel matrix (so the Routes API is never
-called), runs your existing solve_with_gurobi, and writes the Schedule routes.
+called), runs your existing solve_with_gurobi (Gurobi maintenance MILP), and
+writes the Schedule routes.
 =============================================================================
 """
 from django.contrib.auth.models import User
@@ -32,7 +33,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("group_name", type=str, nargs="?", default="Demo Group")
-        parser.add_argument("--prior-load", type=str, default="{}")   # <-- add
+        parser.add_argument("--prior-load", type=str, default="{}")
 
     def handle(self, *args, **opts):
         name = opts["group_name"]
@@ -93,12 +94,14 @@ class Command(BaseCommand):
         run = OptimizationRun.objects.create(
             planning_period=period, triggered_by=creator,
             status=RunStatus.RUNNING, started_at=timezone.now(),
-            solver_name="offline-haversine",
+            # Honest label (Req_45 traceability): assignment is the Gurobi
+            # maintenance MILP; travel input is haversine (offline / no Google).
+            solver_name="gurobi-maintenance",
         )
         write_optimization_results(run, results)
         run.status = RunStatus.FEASIBLE
         run.finished_at = timezone.now()
-        run.summary = f"Offline maintenance solve for {name}."
+        run.summary = f"Gurobi maintenance solve for {name} (haversine travel)."
         run.save()
 
         assigned = sum(1 for r in results if r.get("technician") is not None)

@@ -22,7 +22,6 @@ Weekends skipped (no planned maintenance on weekends).
 NOTE: each day is a full Gurobi solve. Back up db.sqlite3 before long runs.
 =============================================================================
 """
-import json
 import math
 from datetime import date, datetime, timedelta, time
 
@@ -83,7 +82,6 @@ class Command(BaseCommand):
             f"=== solve_month: {group.name} | {start} .. {end} | "
             f"zone = {len(zone_unit_ids)} units ==="))
 
-        self._cumulative_min = {}        # <-- add: month-to-date minutes per technician
         solved_days, grand = 0, 0
         d = start
         while d <= end:
@@ -199,9 +197,7 @@ class Command(BaseCommand):
 
         try:
             try:
-                call_command("solve_group", group.name,
-                             prior_load=json.dumps(self._cumulative_min),
-                             verbosity=0)
+                call_command("solve_group", group.name, verbosity=0)
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f"  {d}: solve skipped ({e})"))
                 return 0
@@ -232,10 +228,6 @@ class Command(BaseCommand):
                 if s.end_time:
                     s.end_time = _combine(d, s.end_time)
                 s.save(update_fields=["start_time", "end_time"])
-                if s.technician_id and s.start_time and s.end_time:
-                    mins = (s.end_time - s.start_time).total_seconds() / 60.0
-                    self._cumulative_min[str(s.technician_id)] = \
-                        self._cumulative_min.get(str(s.technician_id), 0.0) + mins
                 if s.task and s.task.task_type and \
                         s.task.task_type.operation_type == OperationType.MAINTENANCE:
                     complete_task(s.task, on_date=d)
@@ -244,9 +236,21 @@ class Command(BaseCommand):
                     s.task.save(update_fields=["is_active"])
                 n += 1
 
+        # Bound the day: deactivate THIS day/group's leftover (unassigned)
+        # tasks so they don't pile into tomorrow's solve_group, which loads every
+        # is_active=True task. Deferred units simply come due again on their next
+        # cycle -- this is what stops the active backlog from snowballing
+        # (the 15k / 4k "tasks" you saw were accumulated carryover).
+        leftover = Task.objects.filter(
+            assigned_group=group, planning_period__start_date=d, is_active=True,
+        )
+        dropped = leftover.count()
+        if dropped:
+            leftover.update(is_active=False)
+
         self.stdout.write(
             f"  {d} {d.strftime('%a')}: due A={counts['A']} B={counts['B']} "
-            f"C={counts['C']} -> run #{new_run.id}, {n} scheduled & completed")
+            f"C={counts['C']} -> run #{new_run.id}, {n} done, {dropped} unassigned")
         return n
 
 

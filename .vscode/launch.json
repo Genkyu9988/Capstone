@@ -38,6 +38,8 @@
 //http://localhost:8080/api/vehicles
 //flutter run -d chrome -t lib/AdminWeb/anil_admin.dart
 //flutter run -d chrome -t lib/web/supervisor_dashboard.dart
+//flutter run -d chrome -t lib/web/admin_dashboard.dart
 //python manage.py runserver
 //python manage.py runserver 0.0.0.0:8000
 //a4aebe1c2011cb61fb0462f7ce2c6c721a2e463f
+// username : admin email : andinc01@hotmail.com password : sup1234

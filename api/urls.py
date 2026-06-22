@@ -2,7 +2,9 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from api.demo_showcase_views import ShowcaseRoutesView
 from .simulation_run_views import SimulationRunView
+from .simulation_reset_views import SimulationResetView
 from .location_views import MyLocationUpdateView
+from .admin_views import AdminHQListView, AdminHQStateView, AdminGenerateView
 from .clock_views import SetClockView
 from .views import MyOptimizedRouteView
 from .views import (
@@ -86,4 +88,8 @@ urlpatterns = [
     path("repair/clear/", ClearRepairsView.as_view()),
     path("my-location/", MyLocationUpdateView.as_view(), name="my-location"),
     path("clock/set/", SetClockView.as_view(), name="set-clock"),
+    path("simulation/reset/", SimulationResetView.as_view(), name="simulation-reset"),
+    path("admin/hqs/", AdminHQListView.as_view()),
+    path("admin/hq-state/", AdminHQStateView.as_view()),
+    path("admin/generate/", AdminGenerateView.as_view()),
 ]

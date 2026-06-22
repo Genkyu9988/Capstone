@@ -7,9 +7,16 @@ elevator_optimization.py decides WHO does WHAT (assignment). This module
 decides the ORDER a single technician drives their assigned stops, so the
 map polyline reflects the shortest real route.
 
-  optimal_open_route(depot, stops)
+  optimal_open_route(depot, stops, leg_dist_fn=None)
     - depot: (lat, lng) -> where the technician starts the day
     - stops: list of dicts, each with keys: id, lat, lng, is_aa (bool), payload
+    - leg_dist_fn: OPTIONAL callable (stop_a, stop_b) -> km. When provided, it
+      supplies the stop->stop leg distance (e.g. a Google-Maps-backed, cached
+      distance, used to satisfy Req_33's "utilize distance/duration in route
+      calculations"). When None, haversine is used -- DEFAULT, unchanged
+      behaviour for every existing caller. Depot legs are ALWAYS haversine: the
+      depot is the technician's moving GPS position, not a Unit, so the Google
+      unit->unit cache does not apply to it.
     - returns: (ordered_stops, total_km)
 
 Method: Gurobi open-path TSP (start at depot, visit every stop once, no
@@ -32,63 +39,98 @@ def haversine_km(lat1, lng1, lat2, lng2):
     return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
-def _path_length(depot, ordered):
+def _stop_to_stop_km(a, b, leg_dist_fn):
+    """Stop->stop leg. Uses leg_dist_fn (e.g. Google) when provided, else
+    haversine over the two stops' coordinates."""
+    if leg_dist_fn is not None:
+        return leg_dist_fn(a, b)
+    return haversine_km(a["lat"], a["lng"], b["lat"], b["lng"])
+
+
+def _depot_to_stop_km(depot, stop):
+    """Depot leg is always haversine (moving GPS origin, not a Unit)."""
+    return haversine_km(depot[0], depot[1], stop["lat"], stop["lng"])
+
+
+def _path_length(depot, ordered, leg_dist_fn=None):
     total = 0.0
-    cur = depot
+    prev = None
     for s in ordered:
-        total += haversine_km(cur[0], cur[1], s["lat"], s["lng"])
-        cur = (s["lat"], s["lng"])
+        if prev is None:
+            total += _depot_to_stop_km(depot, s)
+        else:
+            total += _stop_to_stop_km(prev, s, leg_dist_fn)
+        prev = s
     return total
 
 
-def _fallback_route(depot, stops):
+def _fallback_route(depot, stops, leg_dist_fn=None):
     """Exact for small n, nearest-neighbour for large. AA stays first."""
     aa = [s for s in stops if s.get("is_aa")]
     rest = [s for s in stops if not s.get("is_aa")]
 
-    def order_segment(start, segment):
+    def seg_len(start_coord, segment):
+        total = 0.0
+        prev = None
+        for s in segment:
+            if prev is None:
+                total += haversine_km(start_coord[0], start_coord[1], s["lat"], s["lng"])
+            else:
+                total += _stop_to_stop_km(prev, s, leg_dist_fn)
+            prev = s
+        return total
+
+    def order_segment(start_coord, segment):
         if len(segment) <= 1:
             return list(segment)
         if len(segment) <= 8:
             best, best_d = None, None
             for perm in permutations(segment):
-                d = _path_length(start, list(perm))
+                d = seg_len(start_coord, list(perm))
                 if best_d is None or d < best_d:
                     best, best_d = list(perm), d
             return best
         # nearest neighbour
         remaining = list(segment)
         out = []
-        cur = start
+        prev = None
+        cur_coord = start_coord
         while remaining:
-            nxt = min(remaining, key=lambda s: haversine_km(cur[0], cur[1], s["lat"], s["lng"]))
+            if prev is None:
+                nxt = min(remaining, key=lambda s: haversine_km(cur_coord[0], cur_coord[1], s["lat"], s["lng"]))
+            else:
+                nxt = min(remaining, key=lambda s: _stop_to_stop_km(prev, s, leg_dist_fn))
             out.append(nxt)
             remaining.remove(nxt)
-            cur = (nxt["lat"], nxt["lng"])
+            prev = nxt
         return out
 
     ordered_aa = order_segment(depot, aa)
-    cursor = (ordered_aa[-1]["lat"], ordered_aa[-1]["lng"]) if ordered_aa else depot
+    cursor = ((ordered_aa[-1]["lat"], ordered_aa[-1]["lng"]) if ordered_aa else depot)
     ordered_rest = order_segment(cursor, rest)
     ordered = ordered_aa + ordered_rest
-    return ordered, _path_length(depot, ordered)
+    return ordered, _path_length(depot, ordered, leg_dist_fn)
 
 
-def optimal_open_route(depot, stops):
+def optimal_open_route(depot, stops, leg_dist_fn=None):
     """
     Returns (ordered_stops, total_km). Tries Gurobi first, falls back safely.
+
+    leg_dist_fn(stop_a, stop_b) -> km optionally overrides the stop->stop leg
+    distance (e.g. a Google-Maps-backed cached distance). When None, haversine
+    is used -- the default, identical to the previous behaviour.
     """
     n = len(stops)
     if n == 0:
         return [], 0.0
     if n == 1:
-        return list(stops), _path_length(depot, list(stops))
+        return list(stops), _path_length(depot, list(stops), leg_dist_fn)
 
     try:
         import gurobipy as gp
         from gurobipy import GRB
     except Exception:
-        return _fallback_route(depot, stops)
+        return _fallback_route(depot, stops, leg_dist_fn)
 
     try:
         # Nodes: 0 = depot, 1..n = stops
@@ -96,10 +138,13 @@ def optimal_open_route(depot, stops):
         N = n + 1
         # arcs: from any node to any STOP (never back to depot 0)
         arcs = [(i, j) for i in range(N) for j in range(1, N) if i != j]
-        dist = {
-            (i, j): haversine_km(coords[i][0], coords[i][1], coords[j][0], coords[j][1])
-            for (i, j) in arcs
-        }
+
+        dist = {}
+        for (i, j) in arcs:
+            if i == 0:
+                dist[(i, j)] = _depot_to_stop_km(depot, stops[j - 1])
+            else:
+                dist[(i, j)] = _stop_to_stop_km(stops[i - 1], stops[j - 1], leg_dist_fn)
 
         m = gp.Model("open_route_tsp")
         m.setParam("OutputFlag", 0)
@@ -134,11 +179,11 @@ def optimal_open_route(depot, stops):
         m.optimize()
 
         if m.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL, GRB.TIME_LIMIT):
-            return _fallback_route(depot, stops)
+            return _fallback_route(depot, stops, leg_dist_fn)
 
         order = sorted(range(1, N), key=lambda k: u[k].X)
         ordered = [stops[k - 1] for k in order]
         return ordered, m.ObjVal
 
     except Exception:
-        return _fallback_route(depot, stops)
+        return _fallback_route(depot, stops, leg_dist_fn)

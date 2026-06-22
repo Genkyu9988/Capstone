@@ -526,29 +526,44 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchMonthlyReport(int year, int month,
-      {String asOf = ''}) async {
-    final base = '$kBaseUrl/api/reports/monthly/?year=$year&month=$month';
-    final r = await http.get(
-      Uri.parse(asOf.isNotEmpty ? '$base&as_of=$asOf' : base),
-      headers: _headers,
-    );
+      {String asOf = '', String sort = '', String order = '', String search = ''}) async {
+    final uri = Uri.parse('$kBaseUrl/api/reports/monthly/').replace(
+        queryParameters: {
+          'year': '$year', 'month': '$month',
+          if (asOf.isNotEmpty) 'as_of': asOf,
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
+          if (search.isNotEmpty) 'search': search,
+        });
+    final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
       throw Exception('GET /api/reports/monthly/ -> ${r.statusCode}: ${r.body}');
     }
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
-  String exportUrl(int year, int month) =>
-      '$kBaseUrl/api/reports/monthly/export/?year=$year&month=$month';
+  String exportUrl(int year, int month,
+      {String sort = '', String order = '', String search = ''}) {
+    return Uri.parse('$kBaseUrl/api/reports/monthly/export/').replace(
+        queryParameters: {
+          'year': '$year', 'month': '$month',
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
+          if (search.isNotEmpty) 'search': search,
+        }).toString();
+  }
 
   Future<Map<String, dynamic>> fetchUnitHistorySummary(
-      {String search = '', int page = 1, int pageSize = 50, String asOf = ''}) async {
+      {String search = '', int page = 1, int pageSize = 50, String asOf = '',
+       String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/units/history/').replace(
         queryParameters: {
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
           'page_size': '$pageSize',
           if (asOf.isNotEmpty) 'as_of': asOf,
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -573,13 +588,16 @@ class ApiClient {
   String unitHistoryExportUrl() => '$kBaseUrl/api/units/history/export/';
 
   Future<Map<String, dynamic>> fetchMaintenanceOverview(
-      {String type = '', String search = '', int page = 1, String asOf = ''}) async {
+      {String type = '', String search = '', int page = 1, String asOf = '',
+       String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/maintenance/').replace(
         queryParameters: {
           if (type.isNotEmpty) 'type': type,
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
           if (asOf.isNotEmpty) 'as_of': asOf,
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -589,13 +607,16 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchCallbackOverview(
-      {String priority = '', String search = '', int page = 1, String asOf = ''}) async {
+      {String priority = '', String search = '', int page = 1, String asOf = '',
+       String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/callbacks/').replace(
         queryParameters: {
           if (priority.isNotEmpty) 'priority': priority,
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
           if (asOf.isNotEmpty) 'as_of': asOf,
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -605,11 +626,15 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchMonthlyLog(
-      int year, int month, {int page = 1, String asOf = ''}) async {
+      int year, int month, {int page = 1, String asOf = '',
+      String search = '', String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/monthly-log/').replace(
         queryParameters: {
           'year': '$year', 'month': '$month', 'page': '$page',
           if (asOf.isNotEmpty) 'as_of': asOf,
+          if (search.isNotEmpty) 'search': search,
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -619,12 +644,15 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchDailyReport(
-      {String date = '', String technicianId = '', String asOf = ''}) async {
+      {String date = '', String technicianId = '', String asOf = '',
+       String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/daily-report/').replace(
         queryParameters: {
           if (date.isNotEmpty) 'date': date,
           if (technicianId.isNotEmpty) 'technician_id': technicianId,
           if (asOf.isNotEmpty) 'as_of': asOf,
+          if (sort.isNotEmpty) 'sort': sort,
+          if (order.isNotEmpty) 'order': order,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -727,9 +755,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     final tabs = <_TabDef>[
       _TabDef(const _NavItem(Icons.map_outlined, Icons.map, 'Live Map'),
           (st) => LiveMapView(state: st)),
-
-      _TabDef(const _NavItem(Icons.auto_awesome_outlined, Icons.auto_awesome, 'Generate Schedule'),
-          (st) => GenerateScheduleTab(baseUrl: kBaseUrl, token: kSupervisorToken)),    
+    
       _TabDef(const _NavItem(Icons.engineering_outlined, Icons.engineering, 'Technicians'),
           (st) => TechniciansView(state: st, onChanged: () => _controller.refresh())),
       _TabDef(const _NavItem(Icons.event_busy_outlined, Icons.event_busy, 'Leave Requests'),
@@ -2140,6 +2166,51 @@ class _TechniciansViewState extends State<TechniciansView> {
 //  Monthly Report view  — per-technician: days, buildings, hours, intervals
 // =============================================================================
 
+// =============================================================================
+//  Reusable sort control: a "Sort by <field>" dropdown + asc/desc toggle.
+//  Used by the report / overview / history tabs to drive server-side sorting.
+// =============================================================================
+class _SortControls extends StatelessWidget {
+  final Map<String, String> options; // value -> label
+  final String sort;
+  final String order; // 'asc' | 'desc'
+  final ValueChanged<String> onSort;
+  final ValueChanged<String> onOrder;
+  const _SortControls({
+    required this.options,
+    required this.sort,
+    required this.order,
+    required this.onSort,
+    required this.onOrder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Sort', style: TextStyle(color: Colors.grey, fontSize: 12)),
+        const SizedBox(width: 6),
+        DropdownButton<String>(
+          value: options.containsKey(sort) ? sort : options.keys.first,
+          underline: const SizedBox.shrink(),
+          items: options.entries
+              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+              .toList(),
+          onChanged: (v) { if (v != null) onSort(v); },
+        ),
+        IconButton(
+          tooltip: order == 'asc' ? 'Ascending' : 'Descending',
+          visualDensity: VisualDensity.compact,
+          icon: Icon(order == 'asc' ? Icons.arrow_upward : Icons.arrow_downward,
+              size: 18),
+          onPressed: () => onOrder(order == 'asc' ? 'desc' : 'asc'),
+        ),
+      ],
+    );
+  }
+}
+
 class MonthlyReportView extends StatefulWidget {
   final DateTime activeDate;   // operating-clock day; nothing past it is shown
   final bool fullSchedule;     // true = ignore the clamp, show the whole plan
@@ -2158,11 +2229,21 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
   bool _exporting = false;
   String? _error;
   int? _expandedTechId;
+  String _sort = 'name';
+  String _order = 'asc';
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _search = '';
 
   @override
   void initState() {
     super.initState();
     _loadMonths();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadMonths() async {
@@ -2200,7 +2281,8 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     try {
       final rep = await _api.fetchMonthlyReport(
           _selectedMonth!['year'], _selectedMonth!['month'],
-          asOf: widget.fullSchedule ? kFullAsOf : '');
+          asOf: widget.fullSchedule ? kFullAsOf : '',
+          sort: _sort, order: _order, search: _search);
       setState(() { _report = rep; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2213,7 +2295,8 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     try {
       final r = await http.get(
         Uri.parse(_api.exportUrl(
-            _selectedMonth!['year'], _selectedMonth!['month'])),
+            _selectedMonth!['year'], _selectedMonth!['month'],
+            sort: _sort, order: _order, search: _search)),
         headers: {'Authorization': 'Token $kSupervisorToken'},
       );
       if (r.statusCode != 200) {
@@ -2251,7 +2334,40 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
               const SizedBox(width: 8),
               const Text('Monthly Report',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 200,
+                child: TextField(
+                  controller: _searchCtrl,
+                  decoration: const InputDecoration(
+                    hintText: 'Search technician…',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.search, size: 18),
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (v) { _search = v.trim(); _loadReport(); },
+                ),
+              ),
               const Spacer(),
+              _SortControls(
+                options: const {
+                  'name': 'Name',
+                  'hours': 'Hours',
+                  'buildings': 'Buildings',
+                  'days': 'Days',
+                },
+                sort: _sort,
+                order: _order,
+                onSort: (v) {
+                  setState(() {
+                    _sort = v;
+                    _order = v == 'name' ? 'asc' : 'desc';
+                  });
+                  _loadReport();
+                },
+                onOrder: (v) { setState(() => _order = v); _loadReport(); },
+              ),
+              const SizedBox(width: 12),
               if (_months.isNotEmpty)
                 DropdownButton<Map<String, dynamic>>(
                   value: _selectedMonth,
@@ -2467,6 +2583,8 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
   String? _error;
   int _page = 1;
   String _search = '';
+  String _sort = 'last_service';
+  String _order = 'desc';
 
   // detail panel
   int? _openUnitId;
@@ -2490,7 +2608,8 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     try {
       final s = await _api.fetchUnitHistorySummary(
           search: _search, page: _page, pageSize: 50,
-          asOf: widget.fullSchedule ? kFullAsOf : '');
+          asOf: widget.fullSchedule ? kFullAsOf : '',
+          sort: _sort, order: _order);
       setState(() { _summary = s; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2584,6 +2703,26 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
                     _load();
                   },
                 ),
+              ),
+              const SizedBox(width: 12),
+              _SortControls(
+                options: const {
+                  'last_service': 'Last Service',
+                  'name': 'Name',
+                  'maint': 'Maintenance',
+                  'callback': 'Callbacks',
+                },
+                sort: _sort,
+                order: _order,
+                onSort: (v) {
+                  setState(() {
+                    _sort = v;
+                    _order = v == 'name' ? 'asc' : 'desc';
+                    _page = 1;
+                  });
+                  _load();
+                },
+                onOrder: (v) { setState(() => _order = v); _load(); },
               ),
               const SizedBox(width: 12),
               FilledButton.icon(
@@ -2902,52 +3041,411 @@ class _MaintenanceOverviewTabState extends State<MaintenanceOverviewTab> {
   Widget build(BuildContext context) {
     final rows = ((_data?['tasks'] as List?) ?? []);
     final total = _data?['total'] ?? 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Cumulative maintenance KPI / SLA summary for this group, summed from
+        // the monthly-report endpoint. Same scope as the list below (up to the
+        // roll day, or the whole plan on the Full · twin) via fullSchedule.
+        _MaintenanceKpiBand(fullSchedule: widget.fullSchedule),
+        const SizedBox(height: 16),
+        Expanded(
+          child: _DashboardCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Icon(Icons.build, color: Colors.blue.shade800),
+                  const SizedBox(width: 8),
+                  const Text('Maintenance Overview',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  for (final t in ['', 'A', 'B', 'C'])
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: ChoiceChip(
+                        label: Text(t.isEmpty ? 'All' : t),
+                        selected: _type == t,
+                        onSelected: (_) { setState(() { _type = t; _page = 1; }); _load(); },
+                      ),
+                    ),
+                ]),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _searchCtrl,
+                  decoration: const InputDecoration(
+                    hintText: 'Search unit or technician…',
+                    isDense: true, prefixIcon: Icon(Icons.search, size: 18),
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (v) { _search = v.trim(); _page = 1; _load(); },
+                ),
+                const SizedBox(height: 8),
+                Text('$total maintenance tasks', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.red)))
+                          : rows.isEmpty
+                              ? const Center(child: Text('No maintenance tasks found.', style: TextStyle(color: Colors.grey)))
+                              : ListView(children: [_taskTable(rows)]),
+                ),
+                if (!_loading && _error == null)
+                  _pagerBar(total, _page, _data?['page_size'] ?? 50,
+                      _page > 1 ? () { setState(() => _page--); _load(); } : null,
+                      _page * (_data?['page_size'] ?? 50) < total ? () { setState(() => _page++); _load(); } : null),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------- Maintenance KPI band
+// A self-contained performance / SLA summary shown at the top of the
+// Maintenance Overview tab. It reads ONLY through the existing monthly-report
+// endpoint (api/reports/months + api/reports/monthly), summing every in-scope
+// month into cumulative, maintenance-only, group-scoped KPIs. It needs no
+// optimizer internals, so it survives solver changes: as long as schedule rows
+// exist the numbers populate, and if a future solver stops writing
+// travel_time_min the travel metrics degrade gracefully to "n/a".
+//
+// Scope follows the tab: on the roll-date tab the report endpoints are queried
+// with no as-of (server clamps to the operating-clock day); on the Full ·
+// Maintenance twin they are queried with as-of = all (whole plan). Cost is one
+// /reports/months call plus one /reports/monthly call per month in scope.
+class _MaintenanceKpiBand extends StatefulWidget {
+  final bool fullSchedule;
+  const _MaintenanceKpiBand({required this.fullSchedule});
+  @override
+  State<_MaintenanceKpiBand> createState() => _MaintenanceKpiBandState();
+}
+
+class _MaintenanceKpiBandState extends State<_MaintenanceKpiBand> {
+  // --- configurable SLA targets (defaults; later driven by UC1 admin data) --
+  static const double _slaTravelSharePct = 30.0; // travel ≤ 30% of on-clock time
+  static const double _slaAvgTravelMin = 20.0;   // ≤ 20 min between jobs
+  static const double _slaMaxTechDayHrs = 9.0;   // no tech over 9h in a day
+
+  final ApiClient _api = ApiClient();
+  bool _loading = true;
+  bool _expanded = true;
+  String? _error;
+
+  // cumulative aggregates (summed across every in-scope month)
+  int _visits = 0;
+  int _workMin = 0;
+  int _travelMin = 0;
+  int _techDays = 0;
+  bool _sawTravel = false;
+  double _maxTechDayHrs = 0;
+  final Set<dynamic> _techIds = {};
+  final Set<String> _dates = {};
+  final Set<String> _units = {};
+  int _monthsCounted = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    // reset accumulators
+    _visits = _workMin = _travelMin = _techDays = 0;
+    _sawTravel = false;
+    _maxTechDayHrs = 0;
+    _techIds.clear();
+    _dates.clear();
+    _units.clear();
+    _monthsCounted = 0;
+    try {
+      final asOf = widget.fullSchedule ? kFullAsOf : '';
+      final months = await _api.fetchReportMonths(asOf: asOf);
+      _monthsCounted = months.length;
+      for (final m in months) {
+        final rep = await _api.fetchMonthlyReport(
+            (m['year'] as num).toInt(), (m['month'] as num).toInt(),
+            asOf: asOf);
+        final techs = ((rep['technicians'] as List?) ?? []);
+        for (final tRaw in techs) {
+          final t = Map<String, dynamic>.from(tRaw as Map);
+          _techIds.add(t['id']);
+          _techDays += (t['days_worked'] as num?)?.toInt() ?? 0;
+          final days = ((t['days'] as List?) ?? []);
+          for (final dRaw in days) {
+            final d = Map<String, dynamic>.from(dRaw as Map);
+            _dates.add('${d['date']}');
+            final dayHrs =
+                ((d['work_minutes'] as num?)?.toDouble() ?? 0) / 60.0;
+            if (dayHrs > _maxTechDayHrs) _maxTechDayHrs = dayHrs;
+            final visits = ((d['visits'] as List?) ?? []);
+            for (final vRaw in visits) {
+              final v = Map<String, dynamic>.from(vRaw as Map);
+              _visits += 1;
+              _workMin += (v['minutes'] as num?)?.toInt() ?? 0;
+              if (v.containsKey('travel_min') && v['travel_min'] != null) {
+                _sawTravel = true;
+                _travelMin += (v['travel_min'] as num).toInt();
+              }
+              final code = v['unit_code'];
+              if (code != null) _units.add(code.toString());
+            }
+          }
+        }
+      }
+      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  // --- derived metrics -------------------------------------------------------
+  double get _workHrs => _workMin / 60.0;
+  double get _travelHrs => _travelMin / 60.0;
+  double? get _travelSharePct {
+    if (!_sawTravel) return null;
+    final denom = _travelMin + _workMin;
+    if (denom <= 0) return null;
+    return _travelMin / denom * 100.0;
+  }
+  double? get _avgTravelPerVisit =>
+      (_sawTravel && _visits > 0) ? _travelMin / _visits : null;
+  double get _avgStopsPerTechDay => _techDays > 0 ? _visits / _techDays : 0;
+  double get _avgHrsPerTechDay => _techDays > 0 ? _workHrs / _techDays : 0;
+
+  String _fmtHrs(double h) =>
+      h >= 100 ? '${h.round()} h' : '${h.toStringAsFixed(1)} h';
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Colors.blue.shade800;
+    final scope = widget.fullSchedule ? 'Whole plan' : 'Up to roll day';
     return _DashboardCard(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(children: [
-            Icon(Icons.build, color: Colors.blue.shade800),
+            Icon(Icons.insights, color: primary),
             const SizedBox(width: 8),
-            const Text('Maintenance Overview',
+            const Text('Performance & SLA',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Spacer(),
-            for (final t in ['', 'A', 'B', 'C'])
-              Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: ChoiceChip(
-                  label: Text(t.isEmpty ? 'All' : t),
-                  selected: _type == t,
-                  onSelected: (_) { setState(() { _type = t; _page = 1; }); _load(); },
-                ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(6),
               ),
-          ]),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _searchCtrl,
-            decoration: const InputDecoration(
-              hintText: 'Search unit or technician…',
-              isDense: true, prefixIcon: Icon(Icons.search, size: 18),
-              border: OutlineInputBorder(),
+              child: Text(scope,
+                  style: TextStyle(
+                      color: primary, fontSize: 11, fontWeight: FontWeight.w600)),
             ),
-            onSubmitted: (v) { _search = v.trim(); _page = 1; _load(); },
-          ),
-          const SizedBox(height: 8),
-          Text('$total maintenance tasks', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-          const SizedBox(height: 8),
+            const Spacer(),
+            if (_loading)
+              const SizedBox(
+                  height: 16, width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+            else
+              IconButton(
+                tooltip: 'Refresh',
+                icon: const Icon(Icons.refresh, size: 18),
+                onPressed: _load,
+              ),
+            IconButton(
+              tooltip: _expanded ? 'Collapse' : 'Expand',
+              icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 22),
+              onPressed: () => setState(() => _expanded = !_expanded),
+            ),
+          ]),
+          if (_expanded) ...[
+            const SizedBox(height: 6),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text('Could not load metrics: $_error',
+                    style: TextStyle(color: Colors.red.shade700, fontSize: 13)),
+              )
+            else if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(
+                    child: Text('Summing the schedule…',
+                        style: TextStyle(color: Colors.grey))),
+              )
+            else if (_monthsCounted == 0 || _visits == 0)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text('No maintenance activity in scope yet.',
+                    style: TextStyle(color: Colors.grey)),
+              )
+            else ...[
+              Wrap(
+                spacing: 10, runSpacing: 10,
+                children: [
+                  _stat('Visits', '$_visits', Icons.place_outlined),
+                  _stat('Buildings', '${_units.length}', Icons.apartment_outlined),
+                  _stat('Work time', _fmtHrs(_workHrs), Icons.schedule),
+                  _stat('Travel time', _sawTravel ? _fmtHrs(_travelHrs) : 'n/a',
+                      Icons.alt_route, muted: !_sawTravel),
+                  _stat('Technicians', '${_techIds.length}',
+                      Icons.engineering_outlined),
+                  _stat('Days covered', '${_dates.length}', Icons.event_outlined),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 22, runSpacing: 10,
+                children: [
+                  _eff('Travel share',
+                      _travelSharePct == null
+                          ? 'n/a'
+                          : '${_travelSharePct!.toStringAsFixed(1)}%'),
+                  _eff('Avg stops / tech·day',
+                      _avgStopsPerTechDay.toStringAsFixed(1)),
+                  _eff('Avg hours / tech·day',
+                      _avgHrsPerTechDay.toStringAsFixed(1)),
+                  _eff('Avg travel / visit',
+                      _avgTravelPerVisit == null
+                          ? 'n/a'
+                          : '${_avgTravelPerVisit!.toStringAsFixed(0)} min'),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Divider(height: 1),
+              const SizedBox(height: 10),
+              Row(children: [
+                Icon(Icons.verified_outlined,
+                    size: 16, color: Colors.grey.shade600),
+                const SizedBox(width: 6),
+                Text('Service-level checks',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: Colors.grey.shade800)),
+              ]),
+              const SizedBox(height: 8),
+              _sla(
+                pass: _travelSharePct == null
+                    ? null
+                    : _travelSharePct! <= _slaTravelSharePct,
+                label: 'Travel share within budget',
+                detail: _travelSharePct == null
+                    ? 'travel not recorded'
+                    : '${_travelSharePct!.toStringAsFixed(1)}% · target ≤ ${_slaTravelSharePct.toStringAsFixed(0)}%',
+              ),
+              _sla(
+                pass: _avgTravelPerVisit == null
+                    ? null
+                    : _avgTravelPerVisit! <= _slaAvgTravelMin,
+                label: 'Short hops between jobs',
+                detail: _avgTravelPerVisit == null
+                    ? 'travel not recorded'
+                    : '${_avgTravelPerVisit!.toStringAsFixed(0)} min avg · target ≤ ${_slaAvgTravelMin.toStringAsFixed(0)} min',
+              ),
+              _sla(
+                pass: _maxTechDayHrs <= _slaMaxTechDayHrs,
+                label: 'No technician over the daily cap',
+                detail:
+                    'busiest day ${_maxTechDayHrs.toStringAsFixed(1)} h · cap ${_slaMaxTechDayHrs.toStringAsFixed(0)} h',
+              ),
+              const SizedBox(height: 8),
+              Text(
+                  'SLA targets are defaults; they can be configured later via '
+                  'system settings (UC1).',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value, IconData icon,
+      {bool muted = false}) {
+    final c = muted ? Colors.grey.shade500 : Colors.blue.shade800;
+    return Container(
+      width: 150,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: muted ? Colors.grey.shade50 : Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: muted ? Colors.grey.shade200 : Colors.blue.shade100),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: c),
+          const SizedBox(width: 10),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.red)))
-                    : rows.isEmpty
-                        ? const Center(child: Text('No maintenance tasks found.', style: TextStyle(color: Colors.grey)))
-                        : ListView(children: [_taskTable(rows)]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold, color: c)),
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.grey.shade600)),
+              ],
+            ),
           ),
-          if (!_loading && _error == null)
-            _pagerBar(total, _page, _data?['page_size'] ?? 50,
-                _page > 1 ? () { setState(() => _page--); _load(); } : null,
-                _page * (_data?['page_size'] ?? 50) < total ? () { setState(() => _page++); _load(); } : null),
+        ],
+      ),
+    );
+  }
+
+  Widget _eff(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        Text(label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+      ],
+    );
+  }
+
+  Widget _sla(
+      {required bool? pass, required String label, required String detail}) {
+    // pass == null -> not measurable (e.g. travel not recorded) -> neutral
+    final Color c;
+    final IconData icon;
+    if (pass == null) {
+      c = Colors.grey.shade500;
+      icon = Icons.remove_circle_outline;
+    } else if (pass) {
+      c = Colors.green.shade700;
+      icon = Icons.check_circle;
+    } else {
+      c = Colors.orange.shade800;
+      icon = Icons.error_outline;
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: c),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w500)),
+          ),
+          Text(detail,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
         ],
       ),
     );

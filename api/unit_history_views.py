@@ -1,49 +1,32 @@
 """
 api/unit_history_views.py
 =============================================================================
-Per-unit service history for the LOGGED-IN supervisor, scoped to their group
-and adapting to the group's type:
-
-    maintenance-only supervisor -> shows A/B/C maintenance history only
-    callback-only supervisor    -> shows callback history only
-    mixed supervisor            -> shows both
+Per-unit service history for the LOGGED-IN supervisor, scoped to their group.
 
   GET /api/units/history/
-      -> summary table: each unit in the supervisor's scope with counts
-         (maintenance visits, callbacks) and last-service date. Paginated.
-         ?search=<text>  filters by unit name/code
-         ?page=<n>&page_size=<n>
+        ?search=<unit name / unit code>
+        ?sort=last_service|name|maint|callback   ?order=asc|desc
+        ?page=<n>&page_size=<n>
+      Default sort = last_service, newest first (the latest-serviced unit on top).
+  GET /api/units/<unit_id>/history/   -> full chronological history for one unit
+  GET /api/units/history/export/      -> the whole scope as .xlsx
 
-  GET /api/units/<unit_id>/history/
-      -> full chronological history for one unit (every maintenance + callback
-         visit: date, type, technician, times, duration).
-
-  GET /api/units/history/export/
-      -> the whole scope as an .xlsx (one row per visit).
-
-"Scope" = units that have at least one task assigned to this supervisor's group
-(maintenance tasks for maintenance groups, CB- tasks for callback groups, both
-for mixed). Attribution is by assigned_group, which for callbacks = the
-responding technician's group.
+Sorting/searching is server-side and backward-compatible.
 =============================================================================
 """
 from collections import defaultdict
 
-from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.models import Schedule, Task, Unit, OperationType
+from api.models import Schedule, Unit, OperationType
 from api.active_day import get_active_date
 from datetime import date as _date
 
 
 def _as_of(request):
-    """Upper date bound the frontend is allowed to see. Defaults to the
-    operating-clock day; the console can widen it with ?as_of=YYYY-MM-DD, or
-    remove the cap entirely with ?as_of=all."""
     raw = (request.query_params.get("as_of")
            if hasattr(request, "query_params") else None)
     if raw:
@@ -61,12 +44,9 @@ def _group(request):
 
 
 def _scope_schedules(group, as_of=None):
-    """All schedules whose task is assigned to this group (maint + callback),
-    optionally clamped to an upper date bound (the operating-clock day)."""
     qs = (Schedule.objects
           .filter(task__assigned_group=group, start_time__isnull=False)
-          .select_related("task", "task__unit", "task__task_type",
-                          "technician"))
+          .select_related("task", "task__unit", "task__task_type", "technician"))
     if as_of is not None:
         qs = qs.filter(start_time__date__lte=as_of)
     return qs
@@ -93,6 +73,25 @@ def _visit(s):
     }
 
 
+# ---- server-side sort ------------------------------------------------------
+_SORT_KEYS = {
+    "name": lambda u: u["name"].lower(),
+    "last_service": lambda u: u["last"] or "",   # ISO dates sort lexicographically
+    "last": lambda u: u["last"] or "",           # accept the short alias too
+    "maint": lambda u: u["maint"],
+    "callback": lambda u: u["callback"],
+}
+
+
+def _sort_units(units, request):
+    sort = (request.query_params.get("sort") or "last_service").lower()
+    keyfn = _SORT_KEYS.get(sort, _SORT_KEYS["last_service"])
+    # newest-first by default for dates; A→Z for name; high→low for counts
+    default_order = "asc" if sort == "name" else "desc"
+    order = (request.query_params.get("order") or default_order).lower()
+    return sorted(units, key=keyfn, reverse=(order == "desc"))
+
+
 class UnitHistorySummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -110,7 +109,6 @@ class UnitHistorySummaryView(APIView):
 
         scheds = _scope_schedules(group, _as_of(request))
 
-        # aggregate per unit
         per_unit = defaultdict(lambda: {"maint": 0, "callback": 0, "last": None,
                                         "name": "", "code": "", "type": ""})
         for s in scheds:
@@ -128,17 +126,21 @@ class UnitHistorySummaryView(APIView):
                 rec["last"] = d
 
         units = [{"id": uid, **rec} for uid, rec in per_unit.items()]
+
+        # search by unit name OR unit code/id (case-insensitive)
         if search:
             sl = search.lower()
             units = [u for u in units
-                     if sl in u["name"].lower() or sl in u["code"].lower()]
-        units.sort(key=lambda u: u["name"])
+                     if sl in u["name"].lower()
+                     or sl in u["code"].lower()
+                     or sl == str(u["id"])]
+
+        units = _sort_units(units, request)
 
         total = len(units)
         start = (page - 1) * page_size
         page_units = units[start:start + page_size]
 
-        # group type label
         has_m = any(u["maint"] for u in units)
         has_c = any(u["callback"] for u in units)
         gtype = ("mixed" if has_m and has_c
@@ -150,6 +152,9 @@ class UnitHistorySummaryView(APIView):
             "total_units": total,
             "page": page,
             "page_size": page_size,
+            "sort": (request.query_params.get("sort") or "last_service").lower(),
+            "order": (request.query_params.get("order") or "").lower() or None,
+            "search": search or None,
             "units": page_units,
         })
 
@@ -166,7 +171,8 @@ class UnitHistoryDetailView(APIView):
         if unit is None:
             return Response({"error": "Unit not found."}, status=404)
 
-        scheds = _scope_schedules(group, _as_of(request)).filter(task__unit=unit).order_by("start_time")
+        scheds = _scope_schedules(group, _as_of(request)).filter(
+            task__unit=unit).order_by("start_time")
         visits = [_visit(s) for s in scheds]
 
         return Response({

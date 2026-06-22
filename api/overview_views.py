@@ -1,40 +1,31 @@
 """
 api/overview_views.py
 =============================================================================
-Four supervisor-facing views, each scoped to request.user.supervised_group:
+Four supervisor-facing views, each scoped to request.user.supervised_group.
+All now support server-side sorting (?sort= & ?order=), backward-compatible:
+with no sort param each view keeps its original default ordering.
 
-  Maintenance Overview      GET /api/overview/maintenance/
-      All maintenance tasks (A/B/C) for the group. Filter by ?type=A|B|C,
-      ?status=, ?search=, paginated. Shows unit, type, tech, date, status.
-
-  Repair / Callback Module  GET /api/overview/callbacks/
-      All callback tasks for the group. Filter by ?priority=AA|A|B|C|D,
-      ?search=, paginated. Shows unit, priority, responding tech, date.
-
-  Monthly Tracking & Logs   GET /api/overview/monthly-log/?year=&month=
-      Every task (maintenance + callback) in a month as a chronological log:
-      who went where at what time. Paginated.
-
-  Supervisor Reporting      GET /api/overview/daily-report/?date=YYYY-MM-DD
-                            GET /api/overview/daily-report/?technician_id=<id>&date=
-      Today's (or a date's) faults/breakdowns + locations a technician visited.
+  Maintenance Overview  GET /api/overview/maintenance/
+      ?type=A|B|C  ?status=  ?search=  ?sort=date|unit|type|tech|status  ?order=
+      default sort = date desc (newest first).
+  Repair / Callback     GET /api/overview/callbacks/   (?priority= ?search= ?sort= ?order=)
+  Monthly Log           GET /api/overview/monthly-log/?year=&month=  ?sort= ?order=
+      default sort = date asc (chronological).
+  Daily Report          GET /api/overview/daily-report/?date=  ?technician_id=
+      ?sort=technician|stops  ?order=   (sorts the per-technician list)
 =============================================================================
 """
 from datetime import date as date_cls
 
-from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.models import Schedule, Task, Technician, OperationType
+from api.models import Schedule, OperationType
 from api.active_day import get_active_date
 
 
 def _as_of(request):
-    """Upper date bound the frontend is allowed to see. Defaults to the
-    operating-clock day; the console can widen it with ?as_of=YYYY-MM-DD, or
-    remove the cap entirely with ?as_of=all."""
     raw = (request.query_params.get("as_of")
            if hasattr(request, "query_params") else None)
     if raw:
@@ -80,6 +71,26 @@ def _sched_row(s):
     }
 
 
+# ---- shared row sorter ------------------------------------------------------
+_ROW_SORT_KEYS = {
+    "date": lambda r: ((r["date"] or ""), (r["start"] or "")),
+    "unit": lambda r: (r["unit_name"] or "").lower(),
+    "type": lambda r: str(r["type"] or ""),
+    "tech": lambda r: (r["technician"] or "").lower(),
+    "technician": lambda r: (r["technician"] or "").lower(),
+    "status": lambda r: str(r["status"] or ""),
+}
+
+
+def _sort_rows(rows, request, default_sort, default_order):
+    sort = (request.query_params.get("sort") or default_sort).lower()
+    keyfn = _ROW_SORT_KEYS.get(sort)
+    if keyfn is None:
+        return rows  # unknown sort -> leave the queryset's own order
+    order = (request.query_params.get("order") or default_order).lower()
+    return sorted(rows, key=keyfn, reverse=(order == "desc"))
+
+
 # ===================================================== Maintenance Overview
 class MaintenanceOverviewView(APIView):
     permission_classes = [IsAuthenticated]
@@ -115,6 +126,7 @@ class MaintenanceOverviewView(APIView):
                     or search in r["unit_code"].lower()
                     or (r["technician"] and search in r["technician"].lower())]
 
+        rows = _sort_rows(rows, request, default_sort="date", default_order="desc")
         page_rows, total, page, size = _paginate(rows, request)
         return Response({"group": group.name, "total": total, "page": page,
                          "page_size": size, "tasks": page_rows})
@@ -152,8 +164,8 @@ class CallbackOverviewView(APIView):
                     or search in r["unit_code"].lower()
                     or (r["technician"] and search in r["technician"].lower())]
 
+        rows = _sort_rows(rows, request, default_sort="date", default_order="desc")
         page_rows, total, page, size = _paginate(rows, request)
-        # quick priority breakdown for the header
         breakdown = {}
         for r in rows:
             breakdown[r["type"]] = breakdown.get(r["type"], 0) + 1
@@ -188,6 +200,14 @@ class MonthlyLogView(APIView):
             qs = qs.filter(start_time__date__lte=as_of)
 
         rows = [_sched_row(s) for s in qs]
+        search = (request.query_params.get("search") or "").strip().lower()
+        if search:
+            rows = [r for r in rows
+                    if search in r["unit_name"].lower()
+                    or search in r["unit_code"].lower()
+                    or (r["technician"] and search in r["technician"].lower())]
+
+        rows = _sort_rows(rows, request, default_sort="date", default_order="asc")
         page_rows, total, page, size = _paginate(rows, request, default=100)
         return Response({"group": group.name, "year": year, "month": month,
                          "total": total, "page": page, "page_size": size,
@@ -203,7 +223,7 @@ class DailyReportView(APIView):
         if group is None:
             return Response({"error": "Not a supervisor."}, status=403)
 
-        ceiling = _as_of(request)   # operating-clock day (or console override)
+        ceiling = _as_of(request)
         day_str = request.query_params.get("date")
         if day_str:
             try:
@@ -211,9 +231,7 @@ class DailyReportView(APIView):
             except ValueError:
                 return Response({"error": "date must be YYYY-MM-DD."}, status=400)
         else:
-            # default to the operating day, NOT the real device date
             day = ceiling if ceiling is not None else date_cls.today()
-        # never reveal a day past the operating clock
         if ceiling is not None and day > ceiling:
             day = ceiling
 
@@ -228,9 +246,7 @@ class DailyReportView(APIView):
 
         scheds = list(base.order_by("technician__full_name", "start_time"))
 
-        # faults/breakdowns today = callbacks today
         faults = []
-        # locations visited, grouped by technician
         by_tech = {}
         for s in scheds:
             row = _sched_row(s)
@@ -247,10 +263,17 @@ class DailyReportView(APIView):
             })
 
         techs = [{"technician": name, "stops": len(stops), "locations": stops}
-                 for name, stops in sorted(by_tech.items())]
+                 for name, stops in by_tech.items()]
 
-        # determine group type from what this group actually does, so the
-        # frontend can hide the faults section for maintenance-only HQs.
+        # sort the per-technician list: ?sort=technician|stops  ?order=
+        sort = (request.query_params.get("sort") or "technician").lower()
+        if sort == "stops":
+            order = (request.query_params.get("order") or "desc").lower()
+            techs.sort(key=lambda x: x["stops"], reverse=(order == "desc"))
+        else:
+            order = (request.query_params.get("order") or "asc").lower()
+            techs.sort(key=lambda x: x["technician"].lower(), reverse=(order == "desc"))
+
         has_m = Schedule.objects.filter(
             task__assigned_group=group,
             task__task_type__operation_type=OperationType.MAINTENANCE).exists()
