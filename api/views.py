@@ -508,20 +508,22 @@ class MyOptimizedRouteView(APIView):
             })
 
         # ---- real Google road geometry, identical to the supervisor map ----
-        # Keyed on the STOPS only (first stop = depot, rest = ordered stops),
-        # exactly as dashboard_views does -> hits the same disk cache, so this
-        # is normally 0 extra Google calls and draws the very same road line.
+        # IMPORTANT: use the technician's depot/current location as the route
+        # origin. The older version used the first task as the origin, while
+        # the supervisor dashboard timeline used the technician depot. That made
+        # /api/my-route/ and /api/dashboard/state/ disagree at the same roll time.
         stop_coords = [(float(s.task.unit.latitude), float(s.task.unit.longitude))
                        for s in schedules]
         route_polyline = None
         geometry_source = None
         distance_km = None
         road_duration_min = None
-        if len(stop_coords) >= 2:
+        start_pos = (float(start_lat), float(start_lon))
+        if len(stop_coords) >= 1:
             try:
                 from .services.maps.route_geometry import build_route_geometry
-                depot_geom = stop_coords[0]
-                rest = [{"lat": lat, "lng": lng} for lat, lng in stop_coords[1:]]
+                depot_geom = start_pos
+                rest = [{"lat": lat, "lng": lng} for lat, lng in stop_coords]
                 geom = build_route_geometry(depot_geom, rest)
                 route_polyline = geom.get("points")
                 geometry_source = geom.get("source")
@@ -531,11 +533,9 @@ class MyOptimizedRouteView(APIView):
                 print(f"[my-route] road geometry failed ({exc}) -> straight legs.")
 
         # ---- estimated live position, driven by the operating clock --------
-        # We deliberately IGNORE the device GPS here: on an emulator it reports
-        # Googleplex (California), not Istanbul. Instead we interpolate the
-        # technician along their own road route by the operating clock, exactly
-        # like the supervisor map -> the dot sits on the real route and advances
-        # as the clock ticks (the phone re-polls, so it visibly moves).
+        # We deliberately IGNORE the device GPS here: on an emulator it can
+        # report a bad/stale location. Instead we interpolate the technician
+        # along the same depot -> stops geometry used by the supervisor map.
         current_position = None
         if schedules:
             tl_stops = [{
@@ -545,7 +545,6 @@ class MyOptimizedRouteView(APIView):
             } for s in schedules]
             day_start = timezone.make_aware(
                 datetime.combine(active_day, dtime(DAY_START_HOUR, 0)))
-            start_pos = (tl_stops[0]["latitude"], tl_stops[0]["longitude"])
             timeline = _build_timeline(tl_stops, start_pos, day_start)
             if route_polyline and len(route_polyline) >= 2:
                 cur = _road_position_at(route_polyline, tl_stops, timeline,

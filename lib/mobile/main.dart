@@ -796,6 +796,8 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
       switch (r) {
         case 'MAINTENANCE':
           return 'Maintenance';
+        case 'CALLBACK':
+          return 'Callback';
         case 'REPAIR':
           return 'Repair / Fault';
         case 'BOTH':
@@ -882,7 +884,7 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Availability & Leave (the form is functional; no fake history)
+        // Availability & Leave
         Card(
           elevation: 0,
           color: Colors.white,
@@ -894,16 +896,53 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
               children: [
                 const Text("Availability & Leave", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Text("Submit a leave request for your supervisor to approve.",
-                    style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                Text(
+                  "Submit planned leave or emergency instant leave for supervisor approval. Works for both maintenance and callback technicians.",
+                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                if (_activeDate != null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[100]!),
+                    ),
+                    child: Text(
+                      "Operating date: $_activeDate",
+                      style: TextStyle(color: Colors.blue[900], fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () => _showLeaveRequestSheet(context),
+                    onPressed: () => _showPlannedLeaveRequestSheet(context),
                     icon: const Icon(Icons.date_range),
-                    label: const Text("Submit New Request"),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.blue[800], side: BorderSide(color: Colors.blue[800]!)),
+                    label: const Text("Planned Leave Request"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue[800],
+                      side: BorderSide(color: Colors.blue[800]!),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showInstantLeaveRequestSheet(context),
+                    icon: const Icon(Icons.emergency_share),
+                    label: const Text("Instant Emergency Leave"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[700],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
+                    ),
                   ),
                 ),
               ],
@@ -937,40 +976,82 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
   }
 
   // ----------------------------------------------------
-  // LEAVE REQUEST BOTTOM SHEET
+  // LEAVE REQUEST BOTTOM SHEETS
   // ----------------------------------------------------
+  DateTime _operatingDateTime() {
+    final raw = _activeDate;
+    if (raw != null && raw.trim().isNotEmpty) {
+      final parsed = DateTime.tryParse(raw.trim());
+      if (parsed != null) return DateTime(parsed.year, parsed.month, parsed.day);
+    }
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  String _isoDate(DateTime dt) =>
+      "${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
+
+  String _prettyDate(DateTime dt) =>
+      "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+
+  String _extractApiError(http.Response response) {
+    try {
+      final decoded = json.decode(response.body);
+      if (decoded is Map && decoded['error'] != null) {
+        return decoded['error'].toString();
+      }
+    } catch (_) {}
+    return 'Server returned ${response.statusCode}: ${response.body}';
+  }
+
   Future<void> _submitLeaveRequest({
     required String leaveType,
-    required DateTime start,
-    required DateTime end,
+    DateTime? start,
+    DateTime? end,
+    int? days,
     required String reason,
+    bool instant = false,
   }) async {
-    String d(DateTime dt) =>
-        "${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
     final url = Uri.parse('http://10.0.2.2:8000/api/leave-request/');
     final basicAuth =
         'Basic ${base64Encode(utf8.encode("${widget.username}:${widget.password}"))}';
+
+    final Map<String, dynamic> payload = {
+      'leave_type': instant ? 'Instant Leave' : leaveType,
+      'reason': reason.trim(),
+    };
+
+    if (instant) {
+      payload['instant'] = true;
+      payload['days'] = days ?? 1;
+    } else {
+      if (start == null || end == null) {
+        throw Exception('Start and end date are required.');
+      }
+      payload['start_date'] = _isoDate(start);
+      payload['end_date'] = _isoDate(end);
+    }
+
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json', 'Authorization': basicAuth},
-      body: json.encode({
-        'leave_type': leaveType,
-        'start_date': d(start),
-        'end_date': d(end),
-        'reason': reason,
-      }),
+      body: json.encode(payload),
     );
     if (response.statusCode != 201) {
-      throw Exception('Server returned ${response.statusCode}: ${response.body}');
+      throw Exception(_extractApiError(response));
     }
   }
 
-  void _showLeaveRequestSheet(BuildContext context) {
-    String leaveType = 'Medical Leave';
+  void _showPlannedLeaveRequestSheet(BuildContext context) {
+    String leaveType = 'Annual Leave';
     DateTime? startDate;
     DateTime? endDate;
     final reasonController = TextEditingController();
     bool submitting = false;
+
+    final operating = _operatingDateTime();
+    final earliest = operating.add(const Duration(days: 14));
+    final latest = operating.add(const Duration(days: 365));
 
     showModalBottomSheet(
       context: context,
@@ -982,25 +1063,30 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
       builder: (BuildContext sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheet) {
-            String fmt(DateTime? dt) => dt == null
-                ? null.toString()
-                : "${dt.day}/${dt.month}/${dt.year}";
-
             Future<void> pick(bool isStart) async {
-              final now = DateTime.now();
+              final initial = isStart
+                  ? (startDate ?? earliest)
+                  : (endDate ?? startDate ?? earliest);
+              final first = isStart ? earliest : (startDate ?? earliest);
+              final last = isStart
+                  ? latest
+                  : (startDate == null ? latest : startDate!.add(const Duration(days: 6)));
               final picked = await showDatePicker(
                 context: context,
-                initialDate: isStart ? (startDate ?? now) : (endDate ?? startDate ?? now),
-                firstDate: now.subtract(const Duration(days: 1)),
-                lastDate: now.add(const Duration(days: 365)),
+                initialDate: initial.isBefore(first) ? first : initial,
+                firstDate: first,
+                lastDate: last.isAfter(latest) ? latest : last,
               );
               if (picked != null) {
                 setSheet(() {
                   if (isStart) {
-                    startDate = picked;
-                    if (endDate != null && endDate!.isBefore(picked)) endDate = picked;
+                    startDate = DateTime(picked.year, picked.month, picked.day);
+                    final maxEnd = startDate!.add(const Duration(days: 6));
+                    if (endDate == null || endDate!.isBefore(startDate!) || endDate!.isAfter(maxEnd)) {
+                      endDate = startDate;
+                    }
                   } else {
-                    endDate = picked;
+                    endDate = DateTime(picked.year, picked.month, picked.day);
                   }
                 });
               }
@@ -1010,6 +1096,13 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
               if (startDate == null || endDate == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Please pick a start and end date.')),
+                );
+                return;
+              }
+              final leaveDays = endDate!.difference(startDate!).inDays + 1;
+              if (leaveDays > 7) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Leave interval can be maximum 7 days.')),
                 );
                 return;
               }
@@ -1029,7 +1122,7 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
                       children: [
                         Icon(Icons.check_circle, color: Colors.white),
                         SizedBox(width: 12),
-                        Expanded(child: Text('Leave request submitted — pending supervisor approval.')),
+                        Expanded(child: Text('Planned leave request submitted — pending supervisor approval.')),
                       ],
                     ),
                     backgroundColor: Colors.green[800],
@@ -1049,7 +1142,7 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
                 child: OutlinedButton.icon(
                   onPressed: () => pick(isStart),
                   icon: const Icon(Icons.calendar_today, size: 18),
-                  label: Text(value == null ? label : fmt(value)),
+                  label: Text(value == null ? label : _prettyDate(value)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: value == null ? Colors.black87 : Colors.blue[800],
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1066,88 +1159,102 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
                 right: 24.0,
                 top: 24.0,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 5,
-                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text("Request Time Off / Leave", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text("This goes to your supervisor for approval before it takes effect.",
-                      style: TextStyle(color: Colors.grey[600], fontSize: 14)),
-                  const SizedBox(height: 24),
-
-                  const Text("Request Type", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: leaveType,
-                        items: const <String>['Medical Leave', 'Annual Leave', 'Personal Emergency', 'Training']
-                            .map((v) => DropdownMenuItem<String>(value: v, child: Text(v)))
-                            .toList(),
-                        onChanged: (v) => setSheet(() => leaveType = v ?? 'Medical Leave'),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 5,
+                        decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  const Text("Select Dates", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      dateButton("Start Date", startDate, true),
-                      const SizedBox(width: 12),
-                      dateButton("End Date", endDate, false),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  const Text("Reason / Notes (Optional)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: reasonController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: "Briefly explain the reason for your request...",
-                      hintStyle: TextStyle(color: Colors.grey[400]),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[300]!)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[300]!)),
+                    const SizedBox(height: 24),
+                    const Text("Planned Leave Request", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Minimum notice: 14 days from operating date (${_isoDate(operating)}). Maximum interval: 7 days.",
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: submitting ? null : submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[800],
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(8)),
+                      child: Text(
+                        "Earliest allowed start: ${_isoDate(earliest)}",
+                        style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.w600),
                       ),
-                      child: submitting
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text('SUBMIT REQUEST', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                    const SizedBox(height: 20),
+
+                    const Text("Request Type", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: leaveType,
+                          items: const <String>['Annual Leave', 'Medical Leave', 'Training', 'Personal Leave']
+                              .map((v) => DropdownMenuItem<String>(value: v, child: Text(v)))
+                              .toList(),
+                          onChanged: (v) => setSheet(() => leaveType = v ?? 'Annual Leave'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("Select Dates", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        dateButton("Start Date", startDate, true),
+                        const SizedBox(width: 12),
+                        dateButton("End Date", endDate, false),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("Reason / Notes", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: "Briefly explain the reason for your request...",
+                        hintStyle: TextStyle(color: Colors.grey[400]),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[300]!)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[300]!)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: submitting ? null : submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[800],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        child: submitting
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('SUBMIT PLANNED LEAVE', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
             );
           },
@@ -1155,6 +1262,173 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
       },
     );
   }
+
+  void _showInstantLeaveRequestSheet(BuildContext context) {
+    int days = 1;
+    final reasonController = TextEditingController(text: 'Emergency / sudden leave request');
+    bool submitting = false;
+    final operating = _operatingDateTime();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheet) {
+            Future<void> submit() async {
+              if (reasonController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a short emergency reason.')),
+                );
+                return;
+              }
+              setSheet(() => submitting = true);
+              try {
+                await _submitLeaveRequest(
+                  leaveType: 'Instant Leave',
+                  days: days,
+                  reason: reasonController.text,
+                  instant: true,
+                );
+                if (!mounted) return;
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.white),
+                        SizedBox(width: 12),
+                        Expanded(child: Text('Instant leave request submitted — pending supervisor approval.')),
+                      ],
+                    ),
+                    backgroundColor: Colors.red[800],
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } catch (e) {
+                setSheet(() => submitting = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Could not submit: $e'), backgroundColor: Colors.red[700]),
+                );
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 24.0,
+                right: 24.0,
+                top: 24.0,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 5,
+                        decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.red[700]),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text("Instant Emergency Leave", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Use this for sudden emergencies during work, such as an accident. It starts from the current operating date (${_isoDate(operating)}).",
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red[100]!),
+                      ),
+                      child: Text(
+                        "Supervisor approval will rebuild remaining same-day work and future schedules in your own domain: maintenance stays maintenance, callback stays callback.",
+                        style: TextStyle(color: Colors.red[900], fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("Requested Duration", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: days,
+                          items: List.generate(7, (i) => i + 1)
+                              .map((v) => DropdownMenuItem<int>(value: v, child: Text('$v day${v == 1 ? '' : 's'}')))
+                              .toList(),
+                          onChanged: (v) => setSheet(() => days = v ?? 1),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("Emergency Reason", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: "Example: Car crash during route, sudden illness...",
+                        hintStyle: TextStyle(color: Colors.grey[400]),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[300]!)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[300]!)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: submitting ? null : submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red[700],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        child: submitting
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('SUBMIT INSTANT LEAVE', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
 }
 
 // ==========================================

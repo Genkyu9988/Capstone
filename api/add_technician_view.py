@@ -33,6 +33,10 @@ from api.models import (
     Technician, UserProfile, UserRole,
     TechnicianRole, SpecialtyType, ExperienceLevel,
 )
+from api.services.schedule_rebuild import (
+    rebuild_group_future_schedule,
+    rebuild_group_future_callbacks,
+)
 
 DEFAULT_PASSWORD = "tech12345"
 
@@ -54,6 +58,47 @@ def _group_hq(group):
         return float(t.current_latitude), float(t.current_longitude)
     # Istanbul centre fallback if the group has no located techs yet
     return 41.0700, 29.0100
+
+
+def _maybe_rebuild_future_schedule(group, request, technician_role):
+    """Apply roster impact from the next roll-date day.
+
+    MAINTENANCE roster changes rebuild the future planned-maintenance schedule.
+    CALLBACK roster changes rebuild the future callback schedule for Yusuf/Can
+    callback supervisor groups.
+    """
+    try:
+        if technician_role == TechnicianRole.MAINTENANCE:
+            return rebuild_group_future_schedule(group, request=request)
+        if technician_role == TechnicianRole.CALLBACK:
+            return rebuild_group_future_callbacks(group, request=request)
+        return {
+            "triggered": False,
+            "reason": "Roster changed, but this technician role does not require a rebuild.",
+        }
+    except Exception as exc:
+        return {
+            "triggered": False,
+            "error": str(exc),
+            "reason": "Roster was changed, but future schedule rebuild failed.",
+        }
+
+
+def _rebuild_message(rebuild):
+    if not rebuild:
+        return ""
+    if rebuild.get("triggered"):
+        mode = rebuild.get("mode")
+        label = "callback" if mode == "callback_roster" else "maintenance"
+        return (
+            f" Future {label} schedule rebuilt from "
+            f"{rebuild.get('effective_date')} to {rebuild.get('end_date')} using Gurobi."
+        )
+    if rebuild.get("effective_date"):
+        return (
+            f" Future schedule rebuild not run: {rebuild.get('reason', 'not required')}"
+        )
+    return f" {rebuild.get('reason', '')}".rstrip()
 
 
 class AddTechnicianView(APIView):
@@ -144,6 +189,8 @@ class AddTechnicianView(APIView):
             current_longitude=hq_lng,
         )
 
+        rebuild = _maybe_rebuild_future_schedule(group, request, tech.tech_role)
+
         return Response({
             "id": tech.id,
             "name": tech.full_name,
@@ -151,7 +198,8 @@ class AddTechnicianView(APIView):
             "employee_code": code,
             "tech_role": tech.tech_role,
             "specialty": tech.specialty,
-            "message": f"{full_name} added to {group.name}.",
+            "rebuild": rebuild,
+            "message": f"{full_name} added to {group.name}." + _rebuild_message(rebuild),
         }, status=201)
 
 
@@ -176,14 +224,19 @@ class RemoveTechnicianView(APIView):
                 {"error": "You can only remove technicians in your own group."},
                 status=403)
 
+        old_role = tech.tech_role
         tech.is_active_employee = False
         tech.save(update_fields=["is_active_employee"])
+
+        rebuild = _maybe_rebuild_future_schedule(group, request, old_role)
+
         return Response({
             "id": tech.id,
             "name": tech.full_name,
             "is_active_employee": False,
+            "rebuild": rebuild,
             "message": f"{tech.full_name} removed from the active roster "
-                       f"(history kept).",
+                       f"(history kept)." + _rebuild_message(rebuild),
         })
 
 
@@ -208,9 +261,13 @@ class ReactivateTechnicianView(APIView):
 
         tech.is_active_employee = True
         tech.save(update_fields=["is_active_employee"])
+
+        rebuild = _maybe_rebuild_future_schedule(group, request, tech.tech_role)
+
         return Response({
             "id": tech.id,
             "name": tech.full_name,
             "is_active_employee": True,
-            "message": f"{tech.full_name} reactivated.",
+            "rebuild": rebuild,
+            "message": f"{tech.full_name} reactivated." + _rebuild_message(rebuild),
         })

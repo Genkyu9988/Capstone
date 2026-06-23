@@ -1,16 +1,15 @@
 """
 api/report_views.py
 =============================================================================
-Monthly maintenance reports for the LOGGED-IN supervisor's group.
+Monthly reports for the LOGGED-IN supervisor's group.
 
-  GET /api/reports/months/
-  GET /api/reports/monthly/?year=2026&month=6
-        &sort=name|hours|buildings|days  &order=asc|desc  &search=<technician>
-  GET /api/reports/monthly/export/?year=2026&month=6   (honours sort & search)
+This version is operation-aware:
+  * maintenance supervisors see MAINTENANCE schedules
+  * callback supervisors see CALLBACK schedules
+  * ?operation=maintenance or ?operation=callback can override it
 
-Sorting/searching is server-side and backward-compatible: with no params the
-output is identical to before (technicians sorted by name).
-Scoped to request.user.supervised_group. Read-only.
+Normal tabs are clamped to the operating roll-date.
+Full Schedule tabs pass ?as_of=all and show the full generated horizon.
 =============================================================================
 """
 from collections import defaultdict
@@ -22,11 +21,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.models import Schedule, OperationType
+from api.models import Schedule, OperationType, TechnicianRole
 from api.active_day import get_active_date
 
 
 def _as_of(request):
+    """Upper date bound the frontend is allowed to see. Defaults to the
+    operating-clock day; ?as_of=all removes the cap for Full Schedule tabs."""
     raw = (request.query_params.get("as_of")
            if hasattr(request, "query_params") else None)
     if raw:
@@ -43,10 +44,33 @@ def _supervised_group(request):
     return getattr(request.user, "supervised_group", None)
 
 
-def _group_schedules(group, year=None, month=None, as_of=None):
+def _operation_for_group(request, group):
+    """Choose report operation type.
+
+    The existing Monthly Report UI calls the same endpoints for every supervisor.
+    Maintenance groups should see maintenance rows; callback-only groups
+    (Yusuf Arslan / Can Doğan) should see callback rows.
+    """
+    raw = (request.query_params.get("operation") or request.query_params.get("type") or "").strip().lower()
+    if raw in {"callback", "callbacks", "cb", "breakdown", "repair"}:
+        return OperationType.CALLBACK
+    if raw in {"maintenance", "maint", "pm"}:
+        return OperationType.MAINTENANCE
+
+    roles = set(group.technicians.filter(is_active_employee=True).values_list("tech_role", flat=True))
+    has_callback = TechnicianRole.CALLBACK in roles
+    has_maintenance = TechnicianRole.MAINTENANCE in roles
+    if has_callback and not has_maintenance:
+        return OperationType.CALLBACK
+    return OperationType.MAINTENANCE
+
+
+def _group_schedules(group, year=None, month=None, as_of=None, operation_type=OperationType.MAINTENANCE):
+    """Schedules for a group, optionally filtered to month and clamped to the
+    operating roll-date. Operation type may be MAINTENANCE or CALLBACK."""
     qs = (Schedule.objects
           .filter(technician__group=group,
-                  task__task_type__operation_type=OperationType.MAINTENANCE,
+                  task__task_type__operation_type=operation_type,
                   start_time__isnull=False)
           .select_related("technician", "task", "task__unit", "task__task_type"))
     if year and month:
@@ -62,8 +86,17 @@ def _minutes(s):
     return 0
 
 
-def _build_report(group, year, month, as_of=None):
-    scheds = list(_group_schedules(group, year, month, as_of))
+def _visit_type(task, operation_type):
+    if operation_type == OperationType.CALLBACK:
+        p = (task.priority or "B").upper()
+        # Kept under the old JSON key "maintenance_type" so the existing Flutter
+        # monthly report table can render it without a frontend rewrite.
+        return f"CB {p}"
+    return task.task_type.maintenance_type if task.task_type else None
+
+
+def _build_report(group, year, month, as_of=None, operation_type=OperationType.MAINTENANCE):
+    scheds = list(_group_schedules(group, year, month, as_of, operation_type))
 
     per_tech = defaultdict(lambda: defaultdict(list))
     tech_name = {}
@@ -74,8 +107,9 @@ def _build_report(group, year, month, as_of=None):
         per_tech[t.id][day].append({
             "building": s.task.unit.unit_name,
             "unit_code": s.task.unit.unit_code,
-            "maintenance_type": (s.task.task_type.maintenance_type
-                                 if s.task.task_type else None),
+            "maintenance_type": _visit_type(s.task, operation_type),
+            "operation_type": operation_type,
+            "priority": s.task.priority,
             "start": s.start_time.strftime("%H:%M"),
             "end": s.end_time.strftime("%H:%M") if s.end_time else None,
             "minutes": _minutes(s),
@@ -113,33 +147,6 @@ def _build_report(group, year, month, as_of=None):
     return technicians
 
 
-# ---- server-side sort + search ---------------------------------------------
-# maps the ?sort= value to the technician dict key it orders by
-_SORT_KEYS = {
-    "name": lambda t: t["name"].lower(),
-    "hours": lambda t: t["total_hours"],
-    "building": lambda t: t["buildings_visited"],   # accept singular...
-    "buildings": lambda t: t["buildings_visited"],  # ...and plural
-    "days": lambda t: t["days_worked"],
-}
-
-
-def _sort_search(technicians, request):
-    """Filter by ?search=<technician name>, then order by ?sort= & ?order=.
-    Defaults: sort=name, order=asc for name / desc for the numeric columns
-    (so 'highest hours/days/buildings' is the natural default)."""
-    search = (request.query_params.get("search") or "").strip().lower()
-    if search:
-        technicians = [t for t in technicians if search in t["name"].lower()]
-
-    sort = (request.query_params.get("sort") or "name").lower()
-    keyfn = _SORT_KEYS.get(sort, _SORT_KEYS["name"])
-    default_order = "asc" if sort == "name" else "desc"
-    order = (request.query_params.get("order") or default_order).lower()
-    technicians = sorted(technicians, key=keyfn, reverse=(order == "desc"))
-    return technicians
-
-
 class ReportMonthsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -148,7 +155,8 @@ class ReportMonthsView(APIView):
         if group is None:
             return Response({"error": "Not a supervisor of any group."}, status=403)
 
-        rng = (_group_schedules(group, as_of=_as_of(request))
+        operation_type = _operation_for_group(request, group)
+        rng = (_group_schedules(group, as_of=_as_of(request), operation_type=operation_type)
                .aggregate(lo=Min("start_time"), hi=Max("start_time")))
         months = []
         if rng["lo"] and rng["hi"]:
@@ -161,7 +169,7 @@ class ReportMonthsView(APIView):
                 if m > 12:
                     m = 1
                     y += 1
-        return Response({"months": months})
+        return Response({"months": months, "operation_type": operation_type})
 
 
 class MonthlyReportView(APIView):
@@ -177,16 +185,15 @@ class MonthlyReportView(APIView):
         except (TypeError, ValueError):
             return Response({"error": "year and month required."}, status=400)
 
-        technicians = _build_report(group, year, month, _as_of(request))
-        technicians = _sort_search(technicians, request)
+        operation_type = _operation_for_group(request, group)
+        technicians = _build_report(group, year, month, _as_of(request), operation_type)
         return Response({
             "group": group.name,
+            "operation_type": operation_type,
+            "report_type": "callback" if operation_type == OperationType.CALLBACK else "maintenance",
             "year": year,
             "month": month,
             "label": date(year, month, 1).strftime("%B %Y"),
-            "sort": (request.query_params.get("sort") or "name").lower(),
-            "order": (request.query_params.get("order") or "").lower() or None,
-            "search": (request.query_params.get("search") or "").strip() or None,
             "technician_count": len(technicians),
             "technicians": technicians,
         })
@@ -205,24 +212,23 @@ class MonthlyReportExportView(APIView):
         except (TypeError, ValueError):
             return Response({"error": "year and month required."}, status=400)
 
-        technicians = _build_report(group, year, month, _as_of(request))
-        technicians = _sort_search(technicians, request)   # export honours sort/search
+        operation_type = _operation_for_group(request, group)
+        technicians = _build_report(group, year, month, _as_of(request), operation_type)
         label = date(year, month, 1).strftime("%B_%Y")
+        type_label = "callback" if operation_type == OperationType.CALLBACK else "maintenance"
 
         try:
             import openpyxl
             from openpyxl.styles import Font, PatternFill
         except ImportError:
-            return Response(
-                {"error": "openpyxl not installed. Run: pip install openpyxl"},
-                status=500)
+            return Response({"error": "openpyxl not installed. Run: pip install openpyxl"}, status=500)
 
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Summary"
         head_fill = PatternFill("solid", fgColor="1F4E78")
         head_font = Font(bold=True, color="FFFFFF")
-        headers = ["Technician", "Days Worked", "Buildings Visited", "Total Hours"]
+        headers = ["Technician", "Days Worked", "Visits", "Total Hours"]
         for col, h in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=h)
             cell.fill = head_fill
@@ -236,8 +242,7 @@ class MonthlyReportExportView(APIView):
             ws.column_dimensions[col].width = w
 
         ws2 = wb.create_sheet("Detail")
-        dheaders = ["Technician", "Date", "Start", "End", "Building",
-                    "Type", "Minutes", "Travel (min)"]
+        dheaders = ["Technician", "Date", "Start", "End", "Building", "Type", "Minutes", "Travel (min)"]
         for col, h in enumerate(dheaders, 1):
             cell = ws2.cell(row=1, column=col, value=h)
             cell.fill = head_fill
@@ -255,12 +260,10 @@ class MonthlyReportExportView(APIView):
                     ws2.cell(row=row, column=7, value=v["minutes"])
                     ws2.cell(row=row, column=8, value=v["travel_min"])
                     row += 1
-        for col, w in zip("ABCDEFGH", [24, 12, 8, 8, 32, 8, 10, 12]):
+        for col, w in zip("ABCDEFGH", [24, 12, 8, 8, 32, 10, 10, 12]):
             ws2.column_dimensions[col].width = w
 
-        resp = HttpResponse(
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        resp["Content-Disposition"] = (
-            f'attachment; filename="{group.code}_report_{label}.xlsx"')
+        resp = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        resp["Content-Disposition"] = f'attachment; filename="{group.code}_{type_label}_report_{label}.xlsx"'
         wb.save(resp)
         return resp

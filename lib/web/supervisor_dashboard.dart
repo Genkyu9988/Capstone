@@ -402,6 +402,107 @@ class DispatchResult {
   }
 }
 
+
+class DispatchUnit {
+  final int id;
+  final String unitName;
+  final String unitCode;
+  final String unitType;
+  final String address;
+  final String? district;
+  final double latitude;
+  final double longitude;
+  final String region;
+
+  DispatchUnit({
+    required this.id,
+    required this.unitName,
+    required this.unitCode,
+    required this.unitType,
+    required this.address,
+    required this.district,
+    required this.latitude,
+    required this.longitude,
+    required this.region,
+  });
+
+  factory DispatchUnit.fromJson(Map<String, dynamic> j) => DispatchUnit(
+        id: j['id'] ?? 0,
+        unitName: (j['unit_name'] ?? '').toString(),
+        unitCode: (j['unit_code'] ?? '').toString(),
+        unitType: (j['unit_type'] ?? '').toString(),
+        address: (j['address'] ?? '').toString(),
+        district: j['district']?.toString(),
+        latitude: (j['latitude'] as num).toDouble(),
+        longitude: (j['longitude'] as num).toDouble(),
+        region: (j['region'] ?? '').toString(),
+      );
+
+  String get title => unitName.isEmpty ? unitCode : unitName;
+  String get subtitle => [unitCode, district, address]
+      .where((e) => e != null && e.toString().trim().isNotEmpty)
+      .join(' • ');
+}
+
+class DispatchCandidate {
+  final int id;
+  final String name;
+  final String group;
+  final int currentStops;
+  final double distanceKm;
+  final int durationMin;
+  final String source;
+  final bool winner;
+
+  DispatchCandidate({
+    required this.id,
+    required this.name,
+    required this.group,
+    required this.currentStops,
+    required this.distanceKm,
+    required this.durationMin,
+    required this.source,
+    required this.winner,
+  });
+
+  factory DispatchCandidate.fromJson(Map<String, dynamic> j) => DispatchCandidate(
+        id: j['id'] ?? 0,
+        name: (j['name'] ?? '?').toString(),
+        group: (j['group'] ?? '').toString(),
+        currentStops: j['current_stops'] ?? 0,
+        distanceKm: ((j['distance_km'] ?? 0) as num).toDouble(),
+        durationMin: j['duration_min'] ?? 0,
+        source: (j['source'] ?? '').toString(),
+        winner: j['winner'] == true,
+      );
+}
+
+class DispatchPreview {
+  final DispatchUnit unit;
+  final String priority;
+  final String faultType;
+  final String sourceNote;
+  final List<DispatchCandidate> candidates;
+
+  DispatchPreview({
+    required this.unit,
+    required this.priority,
+    required this.faultType,
+    required this.sourceNote,
+    required this.candidates,
+  });
+
+  factory DispatchPreview.fromJson(Map<String, dynamic> j) => DispatchPreview(
+        unit: DispatchUnit.fromJson(j['unit'] as Map<String, dynamic>),
+        priority: (j['priority'] ?? '').toString(),
+        faultType: (j['fault_type'] ?? '').toString(),
+        sourceNote: (j['source_note'] ?? '').toString(),
+        candidates: ((j['candidates'] as List?) ?? [])
+            .map((e) => DispatchCandidate.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
 class ApiClient {
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -430,21 +531,48 @@ class ApiClient {
     return DashboardState(techs, DateTime.now(), activeDate, activeTime);
   }
 
-  Future<DispatchResult> dispatchTask({
-    required double latitude,
-    required double longitude,
+  Future<List<DispatchUnit>> searchDispatchUnits(String query) async {
+    final uri = Uri.parse('$kBaseUrl/api/repair/units/search/')
+        .replace(queryParameters: {'q': query});
+    final r = await http.get(uri, headers: _headers);
+    if (r.statusCode != 200) {
+      throw Exception('GET /api/repair/units/search/ -> ${r.statusCode}: ${r.body}');
+    }
+    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    return ((j['units'] as List?) ?? [])
+        .map((e) => DispatchUnit.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<DispatchPreview> previewDispatch({
+    required int unitId,
     required String priority,
-    required String faultType,
+  }) async {
+    final r = await http.post(
+      Uri.parse('$kBaseUrl/api/repair/dispatch/preview/'),
+      headers: _headers,
+      body: jsonEncode({
+        'unit_id': unitId,
+        'priority': priority,
+      }),
+    );
+    if (r.statusCode != 200) {
+      throw Exception('POST /api/repair/dispatch/preview/ -> ${r.statusCode}: ${r.body}');
+    }
+    return DispatchPreview.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+  }
+
+  Future<DispatchResult> dispatchTask({
+    required int unitId,
+    required String priority,
     String description = '',
   }) async {
     final r = await http.post(
       Uri.parse('$kBaseUrl/api/repair/dispatch/'),
       headers: _headers,
       body: jsonEncode({
-        'latitude': latitude,
-        'longitude': longitude,
+        'unit_id': unitId,
         'priority': priority,
-        'fault_type': faultType,
         'description': description,
       }),
     );
@@ -697,18 +825,25 @@ class DashboardController extends ChangeNotifier {
     }
   }
 
-  Future<DispatchResult> dispatch({
-    required double latitude,
-    required double longitude,
+  Future<List<DispatchUnit>> searchDispatchUnits(String query) {
+    return _api.searchDispatchUnits(query);
+  }
+
+  Future<DispatchPreview> previewDispatch({
+    required int unitId,
     required String priority,
-    required String faultType,
+  }) {
+    return _api.previewDispatch(unitId: unitId, priority: priority);
+  }
+
+  Future<DispatchResult> dispatchUnit({
+    required int unitId,
+    required String priority,
     String description = '',
   }) async {
     final result = await _api.dispatchTask(
-      latitude: latitude,
-      longitude: longitude,
+      unitId: unitId,
       priority: priority,
-      faultType: faultType,
       description: description,
     );
     await refresh(); // immediately re-pull so map updates
@@ -3853,36 +3988,144 @@ class DispatchTab extends StatefulWidget {
 }
 
 class _DispatchTabState extends State<DispatchTab> {
-  final TextEditingController _latCtrl = TextEditingController(text: '41.01');
-  final TextEditingController _lngCtrl = TextEditingController(text: '29.05');
+  final TextEditingController _unitSearchCtrl = TextEditingController();
   final TextEditingController _descCtrl = TextEditingController();
-  String _priority = 'NORMAL';
+  Timer? _searchDebounce;
+
+  String _priority = 'B';
+  bool _searching = false;
+  bool _previewing = false;
   bool _dispatching = false;
-  DispatchResult? _result;
   String? _error;
+
+  List<DispatchUnit> _unitResults = [];
+  DispatchUnit? _selectedUnit;
+  DispatchPreview? _preview;
+  DispatchResult? _result;
+
+  @override
+  void initState() {
+    super.initState();
+    // Keep dispatch clean: do not load a random unit list before the user searches.
+  }
 
   @override
   void dispose() {
-    _latCtrl.dispose(); _lngCtrl.dispose(); _descCtrl.dispose();
+    _searchDebounce?.cancel();
+    _unitSearchCtrl.dispose();
+    _descCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _dispatch() async {
-    setState(() { _dispatching = true; _error = null; _result = null; });
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    final q = value.trim();
+    setState(() {
+      _selectedUnit = null;
+      _result = null;
+      _error = null;
+      if (q.length < 2) {
+        _unitResults = [];
+        _searching = false;
+      }
+    });
+    if (q.length < 2) return;
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _searchUnits(q);
+    });
+  }
+
+  Future<void> _searchUnits(String q) async {
+    if (q.trim().length < 2) {
+      setState(() {
+        _unitResults = [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
     try {
-      final lat = double.parse(_latCtrl.text.trim());
-      final lng = double.parse(_lngCtrl.text.trim());
-      final res = await widget.controller.dispatch(
-        latitude: lat, longitude: lng,
-        priority: _priority,
-        faultType: _priority == 'AA' ? 'Entrapment' : 'Fault',
-        description: _descCtrl.text.trim(),
-      );
-      setState(() { _result = res; _dispatching = false; });
+      final results = await widget.controller.searchDispatchUnits(q);
+      if (!mounted) return;
+      setState(() {
+        _unitResults = results.take(6).toList();
+        _searching = false;
+      });
     } catch (e) {
-      setState(() { _error = e.toString(); _dispatching = false; });
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _error = e.toString();
+      });
     }
   }
+
+  Future<void> _previewCandidates() async {
+    final unit = _selectedUnit;
+    if (unit == null) {
+      setState(() => _error = 'Pick an existing unit first.');
+      return;
+    }
+    setState(() {
+      _previewing = true;
+      _error = null;
+      _preview = null;
+      _result = null;
+    });
+    try {
+      final preview = await widget.controller.previewDispatch(
+        unitId: unit.id,
+        priority: _priority,
+      );
+      if (!mounted) return;
+      setState(() {
+        _preview = preview;
+        _previewing = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _previewing = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _dispatch() async {
+    final unit = _selectedUnit;
+    if (unit == null) {
+      setState(() => _error = 'Pick an existing unit first.');
+      return;
+    }
+    setState(() {
+      _dispatching = true;
+      _error = null;
+      _result = null;
+    });
+    try {
+      final res = await widget.controller.dispatchUnit(
+        unitId: unit.id,
+        priority: _priority,
+        description: _descCtrl.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _result = res;
+        _dispatching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _dispatching = false;
+      });
+    }
+  }
+
+  String _priorityLabel(String p) => p == 'AA' ? 'AA — Entrapment (1hr SLA)' : 'B — Normal (4hr SLA)';
 
   @override
   Widget build(BuildContext context) {
@@ -3893,41 +4136,53 @@ class _DispatchTabState extends State<DispatchTab> {
           Row(children: [
             Icon(Icons.send, color: Colors.deepOrange.shade700),
             const SizedBox(width: 8),
-            const Text('Dispatch Callback',
+            const Text('Real-Time Callback Dispatch',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ]),
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.amber.shade50,
+              color: Colors.blue.shade50,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.shade200),
+              border: Border.all(color: Colors.blue.shade100),
             ),
             child: Row(children: [
-              Icon(Icons.info_outline, size: 16, color: Colors.amber.shade800),
+              Icon(Icons.info_outline, size: 16, color: Colors.blue.shade800),
               const SizedBox(width: 8),
               Expanded(child: Text(
-                'Dispatches to the nearest available callback technician. '
-                'Travel times currently use a straight-line estimate; they '
-                'will become real road times when Google Maps is integrated.',
-                style: TextStyle(fontSize: 12, color: Colors.amber.shade900))),
+                'Search and select an existing unit, choose the priority, then dispatch. '
+                'The backend selects the best available callback technician. Google road travel '
+                'time is used when enabled; otherwise it safely falls back to straight-line estimates.',
+                style: TextStyle(fontSize: 12, color: Colors.blue.shade900))),
             ]),
           ),
           const SizedBox(height: 16),
-          Row(children: [
-            Expanded(child: TextField(
-              controller: _latCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Latitude', isDense: true, border: OutlineInputBorder()),
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: TextField(
-              controller: _lngCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Longitude', isDense: true, border: OutlineInputBorder()),
-            )),
-          ]),
+
+          TextField(
+            controller: _unitSearchCtrl,
+            onChanged: _onSearchChanged,
+            decoration: InputDecoration(
+              labelText: 'Search existing unit / building / unit code',
+              hintText: 'e.g. Palladium, Maslak, FM903173',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : null,
+              isDense: true,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _unitPicker(),
+          if (_selectedUnit != null) ...[
+            const SizedBox(height: 12),
+            _selectedUnitCard(_selectedUnit!),
+          ],
+
           const SizedBox(height: 12),
           Row(children: [
             const Text('Priority:', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -3936,13 +4191,13 @@ class _DispatchTabState extends State<DispatchTab> {
               label: const Text('AA — Entrapment (1hr)'),
               selected: _priority == 'AA',
               selectedColor: Colors.red.shade100,
-              onSelected: (_) => setState(() => _priority = 'AA'),
+              onSelected: (_) => setState(() { _priority = 'AA'; _preview = null; _result = null; }),
             ),
             const SizedBox(width: 8),
             ChoiceChip(
-              label: const Text('Normal (4hr)'),
-              selected: _priority == 'NORMAL',
-              onSelected: (_) => setState(() => _priority = 'NORMAL'),
+              label: const Text('B — Normal (4hr)'),
+              selected: _priority == 'B',
+              onSelected: (_) => setState(() { _priority = 'B'; _preview = null; _result = null; }),
             ),
           ]),
           const SizedBox(height: 12),
@@ -3950,16 +4205,18 @@ class _DispatchTabState extends State<DispatchTab> {
             controller: _descCtrl,
             decoration: const InputDecoration(
               labelText: 'Fault description (optional)',
-              isDense: true, border: OutlineInputBorder()),
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: _dispatching ? null : _dispatch,
+            onPressed: (_selectedUnit == null || _dispatching) ? null : _dispatch,
             icon: _dispatching
                 ? const SizedBox(height: 16, width: 16,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.send, size: 18),
-            label: const Text('Dispatch to nearest technician'),
+            label: Text(_dispatching ? 'Dispatching...' : 'Dispatch selected unit callback'),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.deepOrange.shade700,
               minimumSize: const Size(0, 48),
@@ -3971,6 +4228,133 @@ class _DispatchTabState extends State<DispatchTab> {
           if (_result != null) _resultCard(_result!),
         ],
       ),
+    );
+  }
+
+  Widget _unitPicker() {
+    final q = _unitSearchCtrl.text.trim();
+    if (_selectedUnit != null) {
+      return const SizedBox.shrink();
+    }
+    if (q.length < 2 && !_searching) {
+      return Text('Type at least 2 characters to search units.', style: TextStyle(color: Colors.grey.shade600));
+    }
+    if (_unitResults.isEmpty && !_searching) {
+      return Text('No matching units found.', style: TextStyle(color: Colors.grey.shade600));
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 180),
+      child: ListView.separated(
+        shrinkWrap: true,
+        itemCount: _unitResults.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, i) {
+          final u = _unitResults[i];
+          final selected = _selectedUnit?.id == u.id;
+          return ListTile(
+            dense: true,
+            selected: selected,
+            leading: Icon(u.unitType == 'ESCALATOR' ? Icons.stairs : Icons.elevator,
+                color: selected ? Colors.blue.shade800 : Colors.grey.shade600),
+            title: Text(u.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text('${u.unitCode} • ${u.region} • ${u.district ?? ''}',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: selected ? const Icon(Icons.check_circle, color: Colors.green) : null,
+            onTap: () {
+              setState(() {
+                _selectedUnit = u;
+                _unitSearchCtrl.text = '${u.title} (${u.unitCode})';
+                _unitResults = [];
+                _preview = null;
+                _result = null;
+                _error = null;
+              });
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _selectedUnitCard(DispatchUnit unit) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.place, color: Colors.deepOrange.shade700),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Selected unit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+          const SizedBox(height: 2),
+          Text(unit.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(unit.subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+          const SizedBox(height: 2),
+          Text('${unit.latitude.toStringAsFixed(5)}, ${unit.longitude.toStringAsFixed(5)} • ${unit.region}',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+        ])),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _selectedUnit = null;
+              _unitSearchCtrl.clear();
+              _unitResults = [];
+              _result = null;
+              _error = null;
+            });
+          },
+          child: const Text('Change'),
+        ),
+      ]),
+    );
+  }
+
+  Widget _previewCard(DispatchPreview p) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.indigo.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.indigo.shade100),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.route, color: Colors.indigo.shade700, size: 18),
+          const SizedBox(width: 6),
+          Expanded(child: Text('${_priorityLabel(_priority)} • ${p.faultType}',
+              style: const TextStyle(fontWeight: FontWeight.bold))),
+        ]),
+        const SizedBox(height: 4),
+        Text(p.sourceNote, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+        const SizedBox(height: 10),
+        for (final c in p.candidates.take(8))
+          Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: c.winner ? Colors.green.shade50 : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: c.winner ? Colors.green.shade300 : Colors.grey.shade200),
+            ),
+            child: Row(children: [
+              CircleAvatar(radius: 14, child: Text(c.name.isEmpty ? '?' : c.name[0])),
+              const SizedBox(width: 8),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text('${c.group} • ${c.currentStops} current stops • ${c.source}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+              ])),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text('${c.durationMin} min', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('${c.distanceKm.toStringAsFixed(1)} km', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+              ]),
+            ]),
+          ),
+      ]),
     );
   }
 

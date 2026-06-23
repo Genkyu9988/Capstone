@@ -39,7 +39,7 @@ from rest_framework.response import Response
 from rest_framework import status as http
 
 from api.models import (Technician, SupervisorGroup, TechnicianRole,
-                        Schedule, Unit, Task)
+                        Schedule, Unit, Task, LeaveRequest)
 from api.active_day import get_active_date, get_active_datetime
 
 
@@ -62,6 +62,15 @@ def _group_type(group):
     if has_c and not has_m:
         return "callback"
     return "maintenance"
+
+
+def _has_approved_leave(technician, day) -> bool:
+    return LeaveRequest.objects.filter(
+        technician=technician,
+        status=LeaveRequest.LeaveStatus.APPROVED,
+        start_date__lte=day,
+        end_date__gte=day,
+    ).exists()
 
 
 # =====================================================================
@@ -126,7 +135,7 @@ class AdminHQStateView(APIView):
             stops_today = (Schedule.objects
                            .filter(technician=t, start_time__date=active_day)
                            .count())
-            on_leave = not t.is_available
+            on_leave = (not t.is_available) or _has_approved_leave(t, active_day)
             if on_leave:
                 status_label = "onLeave"
             elif stops_today:

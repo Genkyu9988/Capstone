@@ -105,11 +105,8 @@ EUROPE_DISTRICTS = {
 
 # Callback SLA sınırları (saat)
 CALLBACK_SLA_HOURS = {
-    "AA": 1.0,
-    "A":  4.0,
-    "B":  8.0,
-    "C": 24.0,
-    "D": 48.0,
+    "AA": 1.0,  # emergency / entrapment response target
+    "B":  4.0,  # all non-emergency callbacks response target
 }
 
 
@@ -219,11 +216,11 @@ def normalize_region(value: Any) -> str:
 
 def normalize_failure_type(value: Any) -> str:
     text = clean_text(value).upper()
-    if text in {"AA", "A", "B", "C", "D"}:
-        return text
-    if "insan" in text or "person" in text or "kal" in text:
+    # Project rule: only two callback priorities are active.
+    # AA = emergency / entrapment, 1 hour SLA. Everything else = B, 4 hour SLA.
+    if text == "AA" or "INSAN" in text or "PERSON" in text or "KAL" in text or "ENTRAP" in text:
         return "AA"
-    return "D"   # bilinmeyeni en düşük önceliğe at
+    return "B"
 
 
 def region_from_location(location: Any) -> str:
@@ -1923,8 +1920,8 @@ def generate_demo_breakdown_tickets(
     sel_df = pd.DataFrame(selected).drop_duplicates("unit_id").head(desired).reset_index(drop=True)
 
     failure_types = ["AA"] * min(aa_count, desired)
-    normal_cycle  = ["A", "B", "C", "D"]
-    failure_types += [normal_cycle[i % 4] for i in range(desired - len(failure_types))]
+    normal_cycle  = ["B"]
+    failure_types += [normal_cycle[i % 1] for i in range(desired - len(failure_types))]
     rng.shuffle(failure_types)
 
     rows: List[Dict[str, Any]] = []

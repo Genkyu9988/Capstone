@@ -150,13 +150,13 @@ def _breakdown_tasks_to_records(tasks):
     for task in tasks:
         unit = task.unit
 
-        response_limit_hours = 4.0
+        # Project rule: callbacks have only two effective priorities.
+        # AA = emergency, 1-hour SLA. Everything else becomes B, 4-hour SLA.
+        priority = str(task.priority or "B").upper()
+        if priority != "AA":
+            priority = "B"
 
-        if task.priority == "AA":
-            response_limit_hours = 1.0
-
-        if task.task_type.sla_target_min:
-            response_limit_hours = task.task_type.sla_target_min / 60
+        response_limit_hours = 1.0 if priority == "AA" else 4.0
 
         records.append({
             "ticket_id": str(task.id),
@@ -165,7 +165,7 @@ def _breakdown_tasks_to_records(tasks):
             "task_type": "Breakdown",
             "unit_type": _unit_type_to_optimizer_type(unit.unit_type),
             "region": _region_from_task(task),
-            "failure_type": task.priority or "D",
+            "failure_type": priority,
             "created_at": task.release_time.isoformat() if task.release_time else timezone.now().isoformat(),
             "response_limit_hours": response_limit_hours,
             "service_time": task.estimated_duration_min / 60,

@@ -220,9 +220,11 @@ class DemoDashboardStateView(APIView):
             route_polyline = None
             geometry_source = None
             if stops and road_used < ROAD_TECH_LIMIT:
-                # keyed on the STOPS (stable all day) -> cache-stable, <=N calls
-                depot_geom = (stops[0]["latitude"], stops[0]["longitude"])
-                rest = [{"lat": s["latitude"], "lng": s["longitude"]} for s in stops[1:]]
+                # Use the same origin as the timeline and /api/my-route/:
+                # technician depot/current location -> ordered stops. This keeps
+                # mobile and supervisor maps synchronized at the same roll time.
+                depot_geom = start or (stops[0]["latitude"], stops[0]["longitude"])
+                rest = [{"lat": s["latitude"], "lng": s["longitude"]} for s in stops]
                 geom = build_route_geometry(depot_geom, rest)
                 route_polyline = geom.get("points")
                 geometry_source = geom.get("source")

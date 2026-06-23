@@ -55,7 +55,8 @@ AA_FRACTION = 0.15
 WEEKEND_TECHS = 2
 WEEKEND_RATE_FACTOR = 0.3
 MAX_SPAN_DAYS = 186          # ~6 months, mirrors SimulationRunView
-SERVICE_MIN = 60
+SERVICE_MIN = 60  # service duration: callback visit takes 60 min
+CALLBACK_SLA_MIN = {"AA": 60, "B": 240}  # SLA response windows: AA=1h, B=4h
 DAY_START_MIN = 8 * 60
 
 
@@ -128,8 +129,11 @@ class Command(BaseCommand):
 
         cb_techs = list(Technician.objects.filter(
             tech_role=TechnicianRole.CALLBACK,
+            is_active_employee=True,
             is_available=True,
-            current_latitude__isnull=False).select_related("group"))
+            current_latitude__isnull=False,
+            current_longitude__isnull=False,
+        ).select_related("group"))
         if not cb_techs:
             raise CommandError("No located callback technicians. Run seed_deployment.")
 
@@ -149,7 +153,7 @@ class Command(BaseCommand):
 
         self._creator = User.objects.filter(is_superuser=True).first() or User.objects.first()
         self._tt_aa = self._task_type("AA")
-        self._tt_norm = self._task_type("NORMAL")
+        self._tt_norm = self._task_type("B")
         self._counter = (Task.objects.filter(task_no__startswith="CB-").count() + 1)
         self._weekend_rate = opts["weekend_rate"]
 
@@ -190,16 +194,21 @@ class Command(BaseCommand):
                 u = random.choice(ru)
                 is_aa = random.random() < AA_FRACTION
                 unit_obj = Unit.objects.get(id=u["id"])
+                priority = "AA" if is_aa else "B"
+                release_at = _combine(d, DAY_START_MIN)
                 task = Task.objects.create(
                     task_no=f"CB-{self._counter:08d}",
                     unit=unit_obj,
                     task_type=(self._tt_aa if is_aa else self._tt_norm),
                     planning_period=period, created_by=self._creator,
-                    description=f"Callback ({'AA entrapment' if is_aa else 'fault'})",
+                    description=f"Callback ({'AA entrapment' if is_aa else 'B fault'})",
                     status=TaskStatus.PENDING,
                     priority=CallbackPriority.AA if is_aa else CallbackPriority.B,
                     estimated_duration_min=SERVICE_MIN,
-                    release_time=timezone.now(), is_active=True)
+                    release_time=release_at,
+                    earliest_start=release_at,
+                    latest_finish=release_at + timedelta(minutes=CALLBACK_SLA_MIN[priority]),
+                    is_active=True)
                 self._counter += 1
                 new_tasks.append(task)
 
@@ -281,14 +290,17 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------- helpers
     def _task_type(self, kind):
-        code = f"CB-{kind}"
+        priority = "AA" if str(kind).upper() == "AA" else "B"
+        code = f"CB-{priority}"
         tt, _ = TaskType.objects.update_or_create(
             code=code,
-            defaults={"name": f"Callback {kind}",
+            defaults={"name": f"Callback {priority}",
                       "operation_type": OperationType.CALLBACK,
                       "required_specialty": SpecialtyType.BOTH,
                       "required_technician_role": TechnicianRole.CALLBACK,
-                      "base_duration_min": SERVICE_MIN, "is_active": True})
+                      "base_duration_min": SERVICE_MIN,
+                      "sla_target_min": CALLBACK_SLA_MIN[priority],
+                      "is_active": True})
         return tt
 
     def _period(self, d):

@@ -41,11 +41,13 @@ def region_of(lng):
 # Priority is a property of the fault type (an entrapment is always an emergency),
 # so the supervisor no longer chooses it separately.
 FAULT_PROFILES = {
-    "Entrapment":  dict(role="CALLBACK",      specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",    tt_code="ELEV-CALL", duration=60, priority="AA"),
-    "Motor Jam":   dict(role="CALLBACK",      specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",    tt_code="ELEV-CALL", duration=90, priority="NORMAL"),
-    "Door Sensor": dict(role="CALLBACK",      specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",    tt_code="ELEV-CALL", duration=45, priority="NORMAL"),
-    "Routine":     dict(role="MAINTENANCE", specialty="ESCALATOR", unit_type="ESCALATOR", op="MAINTENANCE", tt_code="ESC-MAINT", duration=45, priority="NORMAL"),
-    "Other":       dict(role="CALLBACK",      specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",    tt_code="ELEV-CALL", duration=60, priority="NORMAL"),
+    # Service duration is 60 minutes for callback visits.
+    # SLA is separate: AA must be responded to within 1h, B within 4h.
+    "Entrapment":  dict(role="CALLBACK",    specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",   tt_code="CB-AA", duration=60, priority="AA", sla_min=60),
+    "Motor Jam":   dict(role="CALLBACK",    specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",   tt_code="CB-B",  duration=60, priority="B",  sla_min=240),
+    "Door Sensor": dict(role="CALLBACK",    specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",   tt_code="CB-B",  duration=60, priority="B",  sla_min=240),
+    "Routine":     dict(role="MAINTENANCE", specialty="ESCALATOR", unit_type="ESCALATOR", op="MAINTENANCE", tt_code="ESC-MAINT", duration=45, priority="NORMAL", sla_min=None),
+    "Other":       dict(role="CALLBACK",    specialty="ELEVATOR",  unit_type="ELEVATOR",  op="CALLBACK",   tt_code="CB-B",  duration=60, priority="B",  sla_min=240),
 }
 
 
@@ -182,7 +184,20 @@ class DispatchTaskView(APIView):
 
         task_type = TaskType.objects.filter(code=profile["tt_code"]).first()
         if not task_type:
-            return Response({"error": f"TaskType {profile['tt_code']} not found. Run seed_demo_fleet.py."}, status=400)
+            task_type = TaskType.objects.create(
+                code=profile["tt_code"],
+                name=f"Callback {profile['priority']}" if profile["op"] == "CALLBACK" else profile["tt_code"],
+                operation_type=profile["op"],
+                required_specialty=profile["specialty"],
+                required_technician_role=profile["role"],
+                base_duration_min=profile["duration"],
+                sla_target_min=profile.get("sla_min"),
+                is_active=True,
+            )
+        elif profile["op"] == "CALLBACK":
+            task_type.base_duration_min = profile["duration"]
+            task_type.sla_target_min = profile.get("sla_min")
+            task_type.save(update_fields=["base_duration_min", "sla_target_min"])
 
         # 3. Eligible technicians: skill + region
         eligible = [
