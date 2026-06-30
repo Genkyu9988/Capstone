@@ -37,3 +37,9 @@ Thumbs.db
 .sim_jobs/
 .sim_clock.json
 .route_geometry_cache/
+
+# Local/generated files
+db.sqlite3
+.maps_cache/
+.admin_jobs/
+*.pid
