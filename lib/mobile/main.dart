@@ -59,6 +59,8 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
   List<LatLng> _roadPolyline = []; // real Google road path from /api/my-route/
   String? _geometrySource;         // GOOGLE_ROADS | CACHE | STRAIGHT_* | null
   String? _activeDate;             // operating-clock day (e.g. "2026-07-06")
+  bool _onLeave = false;           // approved leave covering the operating-clock day
+  String? _leaveMessage;           // message from /api/my-route/ when on leave
   StreamSubscription<Position>? _posSub;
 
   @override
@@ -171,9 +173,38 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
 
       if (response.statusCode == 200) {
         Map<String, dynamic> data = json.decode(response.body);
-        
-        // Extract the name (e.g. "Can (Acil Arızacı)") and the route array
-        String techName = data['technician'] ?? 'Unknown Technician';
+
+        final bool onLeave = data['on_leave'] == true;
+        final String techName = data['technician'] ?? 'Unknown Technician';
+
+        // If the backend says the technician is on approved leave, hide the
+        // Map tab and clear the route immediately. Historical schedule rows can
+        // still exist in the database, but the mobile app must not show an
+        // active moving route while leave covers the roll date.
+        if (onLeave) {
+          setState(() {
+            _technicianTitle = "$techName's Route";
+            _dailyRoute = [];
+            _roadPolyline = [];
+            _geometrySource = null;
+            _activeDate = data['active_date']?.toString();
+            _myPosition = null;
+            _onLeave = true;
+            _leaveMessage = data['message']?.toString() ?? 'You are currently on approved leave.';
+            _isLoadingMap = false;
+
+            // If the user was looking at Map, jump back to Tasks because Map is
+            // removed while on leave. If Profile was selected, keep it visible.
+            if (_selectedIndex == 1) {
+              _selectedIndex = 0;
+            } else if (_selectedIndex > 1) {
+              _selectedIndex = 1;
+            }
+          });
+          return;
+        }
+
+        // Extract the route array when not on leave.
         List<dynamic> routeArray = data['route'] ?? [];
 
         // Real road geometry: decoded [[lat,lng],...] following the streets.
@@ -207,6 +238,8 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
           _geometrySource = data['geometry_source']?.toString();
           _activeDate = data['active_date']?.toString();
           _myPosition = me;
+          _onLeave = false;
+          _leaveMessage = null;
           _isLoadingMap = false;
         });
       } else {
@@ -229,29 +262,43 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> pages = [
-      _buildTasksTab(context),
-      _buildMapTab(),
-      _buildProfileTab(context),
-    ];
+    final List<Widget> pages = _onLeave
+        ? [
+            _buildTasksTab(context),
+            _buildProfileTab(context),
+          ]
+        : [
+            _buildTasksTab(context),
+            _buildMapTab(),
+            _buildProfileTab(context),
+          ];
+
+    final List<BottomNavigationBarItem> navItems = _onLeave
+        ? const [
+            BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Tasks'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+          ]
+        : const [
+            BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Tasks'),
+            BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Map'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+          ];
+
+    final int safeIndex = _selectedIndex >= pages.length ? 0 : _selectedIndex;
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: SafeArea(
-        child: pages[_selectedIndex],
+        child: pages[safeIndex],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
+        currentIndex: safeIndex,
         onTap: _onItemTapped,
         selectedItemColor: Colors.blue[800],
         unselectedItemColor: Colors.grey[500],
         backgroundColor: Colors.white,
         elevation: 10,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Tasks'),
-          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Map'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-        ],
+        items: navItems,
       ),
     );
   }
@@ -309,6 +356,38 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : Builder(
                       builder: (context) {
+                        if (_onLeave) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.event_busy, size: 56, color: Colors.orange[700]),
+                                  const SizedBox(height: 14),
+                                  const Text(
+                                    "You are currently on leave",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _leaveMessage ?? "Your active route is hidden until your leave ends.",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _activeDate == null ? "" : "Operating date: $_activeDate",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
                         // Real tasks from /api/my-route/, skipping the depot (stop 0).
                         final tasks = _dailyRoute
                             .where((s) => s.type.toUpperCase() != "DEPOT")
@@ -796,8 +875,6 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
       switch (r) {
         case 'MAINTENANCE':
           return 'Maintenance';
-        case 'CALLBACK':
-          return 'Callback';
         case 'REPAIR':
           return 'Repair / Fault';
         case 'BOTH':

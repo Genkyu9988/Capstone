@@ -213,6 +213,87 @@ def _cleanup_empty_runs() -> int:
         return 0
 
 
+# ---------------------------------------------------------------------------
+# Route cache refresh after rebuild
+# ---------------------------------------------------------------------------
+
+def _precache_group_route_geometry(
+    group: SupervisorGroup,
+    start_date: date,
+    end_date: date,
+    operation_type=None,
+) -> dict:
+    """Create/refresh cached Google road geometry for rebuilt technician-days.
+
+    Gurobi rebuilds Schedule rows, but the live map/mobile route drawing reads
+    cached Google route geometry. If schedules change and the cache is not
+    rebuilt, the dashboard correctly says "scheduled but no cached Google routes".
+
+    This helper is deliberately best-effort: schedule rebuild must not fail just
+    because Google Maps is disabled or a route cannot be fetched.
+    """
+    try:
+        from api.services.maps.route_geometry import build_route_geometry
+    except Exception as exc:
+        return {"triggered": False, "reason": f"route_geometry import failed: {exc}"}
+
+    qs = (
+        Schedule.objects
+        .filter(
+            technician__group=group,
+            technician__is_active_employee=True,
+            start_time__date__gte=start_date,
+            start_time__date__lte=end_date,
+        )
+        .select_related("technician", "task", "task__unit", "task__task_type")
+        .order_by("start_time__date", "technician_id", "sequence_order", "start_time", "id")
+    )
+    if operation_type is not None:
+        qs = qs.filter(task__task_type__operation_type=operation_type)
+
+    by_route = defaultdict(list)
+    for s in qs:
+        if not s.technician_id or not s.task_id or not getattr(s.task, "unit", None):
+            continue
+        u = s.task.unit
+        if u.latitude is None or u.longitude is None:
+            continue
+        by_route[(s.start_time.date(), s.technician_id)].append(s)
+
+    counts = defaultdict(int)
+    processed = 0
+    errors = []
+
+    for (_day, _tid), rows in sorted(by_route.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        tech = rows[0].technician
+        first_unit = rows[0].task.unit
+        try:
+            if tech.current_latitude is not None and tech.current_longitude is not None:
+                origin = (float(tech.current_latitude), float(tech.current_longitude))
+            else:
+                origin = (float(first_unit.latitude), float(first_unit.longitude))
+
+            stops = [
+                {"lat": float(s.task.unit.latitude), "lng": float(s.task.unit.longitude)}
+                for s in rows
+            ]
+            geom = build_route_geometry(origin, stops, allow_google_call=True)
+            counts[str(geom.get("source") or "NONE")] += 1
+            processed += 1
+        except Exception as exc:
+            counts["ERROR"] += 1
+            errors.append(f"{tech.full_name}: {str(exc)[:120]}")
+
+    return {
+        "triggered": True,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "processed_technician_days": processed,
+        "sources": dict(counts),
+        "errors": errors[:10],
+    }
+
+
 def _set_tasks_waiting(task_ids: Iterable[int], active: bool) -> int:
     ids = list(task_ids)
     if not ids:
@@ -384,6 +465,8 @@ def rebuild_group_future_schedule(
         log_lines.extend([x.strip() for x in buf.getvalue().splitlines() if x.strip()][-3:])
         log_lines.append(f"{day}: rebuilt {rows} schedule rows in run #{new_run.id}")
 
+    route_cache = _precache_group_route_geometry(group, effective_date, end_date, OperationType.MAINTENANCE)
+
     return {
         "triggered": True,
         "effective_date": effective_date.isoformat(),
@@ -394,6 +477,7 @@ def rebuild_group_future_schedule(
         "deleted_empty_runs": deleted_runs,
         "solved_days": solved_days,
         "new_schedule_rows": total_rows,
+        "route_cache": route_cache,
         "log_tail": log_lines[-15:],
     }
 
@@ -570,6 +654,8 @@ def rebuild_group_instant_leave_schedule(
         log_lines.extend([x.strip() for x in buf.getvalue().splitlines() if x.strip()][-3:])
         log_lines.append(f"{day}: instant-leave rebuilt {rows} schedule rows in run #{new_run.id}")
 
+    route_cache = _precache_group_route_geometry(group, effective_date, end_date, OperationType.MAINTENANCE)
+
     return {
         "triggered": True,
         "mode": "instant_leave",
@@ -584,6 +670,7 @@ def rebuild_group_instant_leave_schedule(
         "deleted_empty_runs": deleted_runs,
         "solved_days": solved_days,
         "new_schedule_rows": total_rows,
+        "route_cache": route_cache,
         "log_tail": log_lines[-20:],
     }
 
@@ -892,6 +979,8 @@ def rebuild_group_future_callbacks(
         else:
             log_lines.append(f"{day}: callback rebuild skipped - {result.get('reason')}")
 
+    route_cache = _precache_group_route_geometry(group, effective_date, end_date, OperationType.CALLBACK)
+
     return {
         "triggered": True,
         "mode": "callback_roster",
@@ -904,6 +993,7 @@ def rebuild_group_future_callbacks(
         "solved_days": solved_days,
         "new_schedule_rows": total_rows,
         "unassigned_tasks": total_unassigned,
+        "route_cache": route_cache,
         "log_tail": log_lines[-20:],
     }
 
@@ -1068,6 +1158,8 @@ def rebuild_group_instant_callback_leave_schedule(
         else:
             log_lines.append(f"{day}: instant callback rebuild skipped - {result.get('reason')}")
 
+    route_cache = _precache_group_route_geometry(group, effective_date, end_date, OperationType.CALLBACK)
+
     return {
         "triggered": True,
         "mode": "instant_callback_leave",
@@ -1083,5 +1175,6 @@ def rebuild_group_instant_callback_leave_schedule(
         "solved_days": solved_days,
         "new_schedule_rows": total_rows,
         "unassigned_tasks": total_unassigned,
+        "route_cache": route_cache,
         "log_tail": log_lines[-20:],
     }

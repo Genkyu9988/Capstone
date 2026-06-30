@@ -7,16 +7,15 @@ Live Map data for the active day (operating clock, api/active_day):
   * planned stops per technician,
   * a traffic-aware timeline (arrival/depart per stop),
   * a POSITION (gps if a phone reports, else estimated along the route + clock),
-  * REAL GOOGLE ROAD GEOMETRY for the first N technicians (cost-capped), so
+  * cached Google road geometry for scheduled technicians, so
     their route line follows actual streets and their estimated dot moves
-    along the road. Everyone else uses free straight lines.
+    along the road. Live polling reads cache only by default.
 
-COST CONTROL (the 5-6-per-supervisor decision):
-  * Only the first LIVE_MAP_ROAD_TECH_LIMIT technicians (default 6) get a
-    Google call, and it's keyed on their STOPS (stable all day) -> at most N
-    computeRoutes calls the first time, 0 on every poll after (disk cache).
-  * route_geometry.py enforces GOOGLE_MAPS_DAILY_LIMIT and falls back to
-    straight legs if Google is off / capped / errors. Never bills past the cap.
+COST CONTROL:
+  * Live map/mobile should not call Google on every refresh.
+  * Run `python manage.py precache_google_routes ...` after schedule generation.
+  * This endpoint reads CACHE by default and falls back visually only if cache
+    is missing. route_geometry.py enforces GOOGLE_MAPS_DAILY_LIMIT.
 =============================================================================
 """
 from datetime import datetime, timedelta, time
@@ -38,8 +37,9 @@ MEDIUM_TRAFFIC_KMH = 22.0
 DEFAULT_SERVICE_MIN = 30
 DAY_START_HOUR = 9
 LIVE_WINDOW_SEC = 120
-# how many technicians per supervisor get real Google road geometry
-ROAD_TECH_LIMIT = getattr(settings, "LIVE_MAP_ROAD_TECH_LIMIT", 6)
+# Live map should not bill Google on every refresh. Precompute routes first with
+# `python manage.py precache_google_routes ...`; then live map/mobile read CACHE.
+LIVE_MAP_PRECOMPUTED_ROUTES_ONLY = bool(getattr(settings, "LIVE_MAP_PRECOMPUTED_ROUTES_ONLY", True))
 
 
 def _haversine_km(lat1, lng1, lat2, lng2):
@@ -181,7 +181,7 @@ class DemoDashboardStateView(APIView):
                 Schedule.objects
                 .filter(technician=t, start_time__date=active_day)   # ONE DAY
                 .select_related("task", "task__unit", "task__task_type")
-                .order_by("sequence_order")
+                .order_by("sequence_order", "start_time")
             )
 
             stops = [{
@@ -193,42 +193,68 @@ class DemoDashboardStateView(APIView):
                 "latitude": float(s.task.unit.latitude),
                 "longitude": float(s.task.unit.longitude),
                 "duration_min": s.task.estimated_duration_min,
+                # Send the optimizer's real scheduled window to the UI.
+                # The frontend must display this in the same operating-clock
+                # timezone as the top roll-date clock; do not convert to PC local.
+                "scheduled_start": s.start_time.isoformat() if s.start_time else None,
+                "scheduled_end": s.end_time.isoformat() if s.end_time else None,
             } for s in schedules]
 
             start = None
             if t.current_latitude is not None and t.current_longitude is not None:
                 start = (float(t.current_latitude), float(t.current_longitude))
 
-            timeline = _build_timeline(stops, start, day_start)
+            # Prefer the actual Gurobi/DB schedule windows instead of rebuilding
+            # an approximate route timeline from 09:00. This is what makes
+            # DONE / ON SITE / ON ROUTE / ON PLAN match the report times.
+            if schedules and all(getattr(s, "start_time", None) and getattr(s, "end_time", None) for s in schedules):
+                timeline = [(s.start_time, s.end_time) for s in schedules]
+            else:
+                timeline = _build_timeline(stops, start, day_start)
 
-            # per-stop state + eta + the stop they're heading to
+            # Per-stop live state.
+            # done     = scheduled end is before/equal active clock
+            # current  = active clock is inside this service window
+            # on_route = first future stop; technician is travelling/waiting toward it
+            # upcoming = later future stops
             next_idx = None
-            for i, s in enumerate(stops):
+            for i, stop in enumerate(stops):
                 arrival, depart = timeline[i]
-                if active_now > depart:
-                    s["state"] = "done"
-                elif arrival <= active_now <= depart:
-                    s["state"] = "current"
+                if active_now >= depart:
+                    stop["state"] = "done"
+                elif arrival <= active_now < depart:
+                    stop["state"] = "current"
+                    if next_idx is None:
+                        next_idx = i
                 else:
-                    s["state"] = "upcoming"
-                s["eta"] = arrival.isoformat()
-                if next_idx is None and active_now < depart:
-                    next_idx = i
+                    if next_idx is None:
+                        stop["state"] = "on_route"
+                        next_idx = i
+                    else:
+                        stop["state"] = "upcoming"
+                stop["eta"] = arrival.isoformat()
+                stop["scheduled_start"] = arrival.isoformat()
+                stop["scheduled_end"] = depart.isoformat()
             next_stop = stops[next_idx] if next_idx is not None else None
 
-            # ---- real Google road geometry for the first N techs with stops -- #
+            # ---- cached Google road geometry for every scheduled technician -- #
+            # Billing-safe: by default this reads existing CACHE only and will not
+            # call Google during live polling. Use the precache_google_routes
+            # management command after schedule generation to fill the cache.
             route_polyline = None
             geometry_source = None
-            if stops and road_used < ROAD_TECH_LIMIT:
-                # Use the same origin as the timeline and /api/my-route/:
-                # technician depot/current location -> ordered stops. This keeps
-                # mobile and supervisor maps synchronized at the same roll time.
-                depot_geom = start or (stops[0]["latitude"], stops[0]["longitude"])
+            if stops:
+                origin_geom = start or (stops[0]["latitude"], stops[0]["longitude"])
                 rest = [{"lat": s["latitude"], "lng": s["longitude"]} for s in stops]
-                geom = build_route_geometry(depot_geom, rest)
+                geom = build_route_geometry(
+                    origin_geom,
+                    rest,
+                    allow_google_call=not LIVE_MAP_PRECOMPUTED_ROUTES_ONLY,
+                )
                 route_polyline = geom.get("points")
                 geometry_source = geom.get("source")
-                road_used += 1
+                if geometry_source in {"GOOGLE_ROADS", "CACHE"}:
+                    road_used += 1
 
             # ---- position --------------------------------------------------- #
             is_live = (
@@ -291,5 +317,6 @@ class DemoDashboardStateView(APIView):
             "active_date": active_day.isoformat(),
             "active_time": active_now.isoformat(),
             "road_techs_shown": road_used,
+            "geometry_mode": "precomputed_cache_only" if LIVE_MAP_PRECOMPUTED_ROUTES_ONLY else "live_google_allowed",
             "fetched_at": real_now.isoformat(),
         })

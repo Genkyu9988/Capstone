@@ -74,32 +74,27 @@ def validate_leave_window(
         )
 
 
-
 def validate_instant_leave_window(
     start_date: date,
     end_date: date,
     *,
     today: Optional[date] = None,
 ) -> None:
-    """
-    Validate instant/emergency leave.
+    """Validate emergency/instant leave.
 
-    Instant leave does NOT require the 14-day notice rule, but it still obeys:
-      * end_date cannot be before start_date
-      * max interval is 7 calendar days
-      * start date should be the operating roll date or later
+    Instant leave is allowed without the normal 14-day notice rule, but it still
+    uses the same basic safety rules:
+        * end date cannot be before start date
+        * maximum interval is MAX_LEAVE_DAYS
+        * start date cannot be before the current operating date
+
+    In the mobile/dashboard flow, instant leave starts on the active roll date.
     """
     today = today or get_operating_date()
+    validate_leave_window(start_date, end_date, today=today, enforce_notice=False)
 
     if start_date < today:
         raise ValueError(
             f"Instant leave cannot start before the operating date. "
             f"Operating date is {today.isoformat()}."
         )
-
-    validate_leave_window(
-        start_date,
-        end_date,
-        today=today,
-        enforce_notice=False,
-    )

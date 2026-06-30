@@ -2,26 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Technician app (mobile)",
+      "name": "Technician Mobile App - Emulator",
       "request": "launch",
       "type": "dart",
       "program": "lib/mobile/main.dart"
     },
     {
-      "name": "Supervisor dashboard (Chrome)",
+      "name": "Supervisor Dashboard - Chrome",
       "request": "launch",
       "type": "dart",
       "program": "lib/web/supervisor_dashboard.dart",
       "deviceId": "chrome"
     },
     {
-      "name": "Anil Galeri (mobile)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/Gallery/anil_galeri.dart"
-    },
-    {
-      "name": "Anil Admin (Chrome)",
+      "name": "Admin Dashboard - Chrome",
       "request": "launch",
       "type": "dart",
       "program": "lib/AdminWeb/anil_admin.dart",
@@ -43,3 +37,4 @@
 //python manage.py runserver 0.0.0.0:8000
 //a4aebe1c2011cb61fb0462f7ce2c6c721a2e463f
 // username : admin email : andinc01@hotmail.com password : sup1234
+//python manage.py shell

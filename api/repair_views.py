@@ -1,28 +1,33 @@
 """
 api/repair_views.py
 =============================================================================
-Real-time callback dispatch.
+A self-contained repair-dispatch section that works with the Demo Group data.
 
-Supervisor workflow:
-  1. Search/select an existing Unit instead of manually typing coordinates.
-  2. Preview the nearest available callback technicians for that unit.
-  3. Dispatch an AA or B callback.
+  GET  /api/repair/panel/    -> a simple page: pick fault type + location,
+                                submit, and see which repair-capable technician
+                                got the job + the full candidate scoreboard.
 
-Cost control for Google Maps:
-  - first filter candidates locally by region + haversine distance
-  - call Google Routes only for the top few candidates
-  - if Google is disabled or fails, safely fall back to straight-line estimate
+  POST /api/repair/dispatch/ -> creates the fault, filters repair-capable techs
+                                (role REPAIR or BOTH + matching specialty),
+                                measures each candidate's added travel
+                                (cheapest-insertion via haversine), assigns the
+                                winner, writes their Schedule, returns the
+                                scoreboard.
+
+No "favor" logic: the winner is simply whoever's route grows least.
+Wire in api/urls.py:
+    from .repair_views import RepairPanelView, RepairDispatchView
+    path("repair/panel/",    RepairPanelView.as_view()),
+    path("repair/dispatch/", RepairDispatchView.as_view()),
 =============================================================================
 """
-from datetime import timedelta
-from math import radians, sin, cos, sqrt, atan2
+from datetime import datetime, time, timedelta
 
-from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.http import HttpResponse
 from django.utils import timezone
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -31,411 +36,403 @@ from api.models import (
     TaskStatus, OperationType, SpecialtyType, TechnicianRole, CallbackPriority,
     UnitType,
 )
-from api.services.optimization.routing import optimal_open_route
+from api.services.maps.distance_service import haversine_distance_km
+from api.active_day import get_active_datetime
+from api.services.maps.route_geometry import build_route_geometry
 
-REGION_THRESHOLD = 29.02
 ROAD_FACTOR = 1.35
 SPEED_KMH = 30.0
-GOOGLE_CANDIDATE_CAP = 8
-SEARCH_LIMIT = 12
+
+# fault type -> the specialty it needs + the unit type + default duration
+FAULT_TYPES = {
+    "Elevator Entrapment": dict(specialty=SpecialtyType.ELEVATOR,  unit=UnitType.ELEVATOR,  dur=60, pr=CallbackPriority.AA),
+    "Elevator Fault":      dict(specialty=SpecialtyType.ELEVATOR,  unit=UnitType.ELEVATOR,  dur=45, pr=CallbackPriority.B),
+    "Escalator Fault":     dict(specialty=SpecialtyType.ESCALATOR, unit=UnitType.ESCALATOR, dur=45, pr=CallbackPriority.B),
+}
 
 
-def _active_datetime(request=None):
-    try:
-        from api.active_day import get_active_datetime
-        return get_active_datetime(request)
-    except Exception:
-        return timezone.localtime()
+def _depot(t):
+    return float(t.current_latitude), float(t.current_longitude)
 
 
-def _haversine_km(lat1, lng1, lat2, lng2):
-    r = 6371.0
-    lat1, lng1, lat2, lng2 = map(radians, [float(lat1), float(lng1), float(lat2), float(lng2)])
-    dlat = lat2 - lat1
-    dlng = lng2 - lng1
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    return r * c
+def _route_km(depot, stops):
+    """Greedy nearest-neighbour open-route length from depot through stops."""
+    if not stops:
+        return 0.0
+    remaining = stops[:]
+    cur = depot
+    total = 0.0
+    while remaining:
+        nxt = min(remaining, key=lambda s: haversine_distance_km(cur[0], cur[1], s[0], s[1]))
+        total += haversine_distance_km(cur[0], cur[1], nxt[0], nxt[1]) * ROAD_FACTOR
+        cur = nxt
+        remaining.remove(nxt)
+    return total
 
 
-def _region(lng):
-    return "ASIA" if float(lng) >= REGION_THRESHOLD else "EUROPE"
+def _tech_stops(tech, active_day=None):
+    """Coordinates of a technician route.
 
-
-def _duration_text_to_seconds(value):
-    if value is None:
-        return None
-    return int(str(value).replace("s", ""))
-
-
-def _fallback_road_estimate(lat1, lng1, lat2, lng2):
-    km = _haversine_km(lat1, lng1, lat2, lng2) * ROAD_FACTOR
-    seconds = int((km / SPEED_KMH) * 3600)
-    return {
-        "distance_km": round(km, 2),
-        "duration_seconds": max(seconds, 60),
-        "duration_min": max(round(seconds / 60), 1),
-        "source": "STRAIGHT_LINE_FALLBACK",
-    }
-
-
-def _google_or_fallback_estimate(origin_lat, origin_lng, dest_lat, dest_lng):
-    """Use Google Routes for a single origin/destination if enabled; otherwise fallback.
-
-    This function is called only after local candidate prefiltering, so we do not
-    spend API calls on every callback technician in the city.
+    Dispatch must compare routes for the selected operating day, not all
+    historical schedules. Otherwise a callback can be assigned based on old
+    month-long data and then disappear from the live dashboard.
     """
-    if not getattr(settings, "GOOGLE_MAPS_ENABLED", False):
-        out = _fallback_road_estimate(origin_lat, origin_lng, dest_lat, dest_lng)
-        out["source"] = "STRAIGHT_LINE_ESTIMATE"
-        return out
-
-    try:
-        from api.services.maps.google_maps import get_route_matrix
-        result = get_route_matrix(
-            origins=[(origin_lat, origin_lng)],
-            destinations=[(dest_lat, dest_lng)],
-        )
-        if not result:
-            raise ValueError("Google Routes returned empty result")
-        row = result[0]
-        if row.get("status") and row["status"].get("code"):
-            raise ValueError(f"Google Routes status: {row['status']}")
-        meters = row.get("distanceMeters")
-        seconds = _duration_text_to_seconds(row.get("duration"))
-        if meters is None or seconds is None:
-            raise ValueError(f"Missing distance/duration in Google result: {row}")
-        return {
-            "distance_km": round(float(meters) / 1000.0, 2),
-            "duration_seconds": int(seconds),
-            "duration_min": max(round(int(seconds) / 60), 1),
-            "source": "GOOGLE_ROADS",
-        }
-    except Exception as exc:
-        out = _fallback_road_estimate(origin_lat, origin_lng, dest_lat, dest_lng)
-        out["source"] = "STRAIGHT_LINE_FALLBACK"
-        out["fallback_reason"] = str(exc)[:160]
-        return out
-
-
-def _profile_from(priority, unit_type):
-    priority = (priority or "B").upper()
-    if priority in ("AA", "ENTRAPMENT"):
-        return {
-            "fault_type": "Elevator Entrapment",
-            "priority": CallbackPriority.AA,
-            "specialty": SpecialtyType.ELEVATOR,
-            "duration": 60,
-        }
-    # Normal callbacks are B with 4-hour SLA; service duration stays 60 minutes.
-    specialty = SpecialtyType.ESCALATOR if unit_type == UnitType.ESCALATOR else SpecialtyType.ELEVATOR
-    return {
-        "fault_type": "Escalator Fault" if specialty == SpecialtyType.ESCALATOR else "Elevator Fault",
-        "priority": CallbackPriority.B,
-        "specialty": specialty,
-        "duration": 60,
-    }
-
-
-def _candidate_query_for_unit(unit):
-    unit_region = _region(unit.longitude)
+    qs = Schedule.objects.filter(technician=tech)
+    if active_day is not None:
+        qs = qs.filter(start_time__date=active_day)
     out = []
-    for t in (Technician.objects
-              .filter(
-                  tech_role=TechnicianRole.CALLBACK,
-                  is_active_employee=True,
-                  is_available=True,
-                  current_latitude__isnull=False,
-                  current_longitude__isnull=False,
-              )
-              .select_related("user", "group")):
-        if _region(t.current_longitude) != unit_region:
-            continue
-        km = _haversine_km(t.current_latitude, t.current_longitude, unit.latitude, unit.longitude)
-        out.append((t, km))
-    return sorted(out, key=lambda x: x[1])
+    for s in qs.select_related("task__unit").order_by("sequence_order", "start_time"):
+        u = s.task.unit
+        if u and u.latitude is not None and u.longitude is not None:
+            out.append((float(u.latitude), float(u.longitude)))
+    return out
 
 
-def _current_day_schedules(tech, active_dt):
-    return list(
-        Schedule.objects.filter(
-            technician=tech,
-            start_time__date=active_dt.date(),
-        ).select_related("task", "task__unit").order_by("sequence_order", "start_time")
+def _current_group_for_request(request):
+    try:
+        return request.user.supervised_group
+    except Exception:
+        return None
+
+
+def _aware_active_datetime(request):
+    active_now = get_active_datetime(request)
+    if timezone.is_naive(active_now):
+        active_now = timezone.make_aware(active_now, timezone.get_current_timezone())
+    return active_now
+
+
+def _route_cache_for_day(tech, active_day):
+    """Refresh one technician-day route geometry after dispatch.
+
+    Live map/report endpoints are cache-first to avoid billing Google on every
+    refresh. Dispatch changes a route immediately, so we refresh only the
+    affected technician-day here. If Google is disabled or the cap is reached,
+    the function safely returns a fallback source and the schedule still exists.
+    """
+    schedules = list(
+        Schedule.objects
+        .filter(technician=tech, start_time__date=active_day)
+        .select_related("task__unit")
+        .order_by("sequence_order", "start_time")
+    )
+    stops = []
+    for s in schedules:
+        u = s.task.unit
+        if u and u.latitude is not None and u.longitude is not None:
+            stops.append({"lat": float(u.latitude), "lng": float(u.longitude)})
+    if not stops:
+        return {"source": None, "points": []}
+    if tech.current_latitude is not None and tech.current_longitude is not None:
+        origin = {"lat": float(tech.current_latitude), "lng": float(tech.current_longitude)}
+    else:
+        origin = stops[0]
+    try:
+        return build_route_geometry(origin, stops, allow_google_call=True)
+    except Exception as exc:
+        return {"source": "ERROR", "error": str(exc), "points": []}
+
+
+def _insert_dispatch_schedule(*, winner, task, priority, duration_min, active_now):
+    """Create a same-day dispatch schedule visible on live map/reports.
+
+    AA is inserted as the next possible job from the current roll clock.
+    If the technician is already on site, it starts after that active visit.
+    Future jobs are pushed forward. Normal B callbacks are appended after the
+    current route, but never before the current roll clock.
+    """
+    active_day = timezone.localtime(active_now).date()
+    day_start = timezone.make_aware(datetime.combine(active_day, time(9, 0)), timezone.get_current_timezone())
+    base_start = max(active_now, day_start)
+
+    existing = list(
+        Schedule.objects
+        .filter(technician=winner, start_time__date=active_day)
+        .select_related("task")
+        .order_by("sequence_order", "start_time")
+    )
+
+    if priority == CallbackPriority.AA:
+        current = next((s for s in existing if s.start_time <= active_now < s.end_time), None)
+        dispatch_start = max(current.end_time if current else base_start, day_start)
+        past_count = sum(1 for s in existing if s.end_time <= dispatch_start)
+        seq = past_count + 1
+        dispatch_end = dispatch_start + timedelta(minutes=duration_min)
+
+        # Push jobs that have not started after the insertion point. Keep their
+        # original durations and add a small buffer after the emergency visit.
+        cursor = dispatch_end + timedelta(minutes=5)
+        for s in existing:
+            if s.end_time <= dispatch_start:
+                continue
+            if s is current:
+                continue
+            original_duration = s.end_time - s.start_time
+            s.sequence_order = s.sequence_order + 1 if s.sequence_order >= seq else s.sequence_order
+            if s.start_time >= dispatch_start:
+                s.start_time = cursor
+                s.end_time = cursor + original_duration
+                cursor = s.end_time + timedelta(minutes=5)
+            s.save(update_fields=["sequence_order", "start_time", "end_time"])
+    else:
+        if existing:
+            last = max(existing, key=lambda s: s.end_time)
+            dispatch_start = max(last.end_time + timedelta(minutes=5), base_start)
+            seq = max(s.sequence_order for s in existing) + 1
+        else:
+            dispatch_start = base_start
+            seq = 1
+        dispatch_end = dispatch_start + timedelta(minutes=duration_min)
+
+    return Schedule.objects.create(
+        task=task,
+        technician=winner,
+        start_time=dispatch_start,
+        end_time=dispatch_end,
+        sequence_order=seq,
+        source="MANUAL",
+        is_manual_override=True,
+        notes="DISPATCH CALLBACK",
     )
 
 
-def _remaining_same_day_tasks(tech, active_dt):
-    return [s.task for s in _current_day_schedules(tech, active_dt) if not s.end_time or s.end_time > active_dt]
 
+class RepairDispatchUnitsView(APIView):
+    """Return existing active units that a supervisor can use as dispatch targets.
 
-def _rank_candidates(unit, active_dt, limit=GOOGLE_CANDIDATE_CAP):
-    nearest = _candidate_query_for_unit(unit)[:limit]
-    ranked = []
-    for tech, straight_km in nearest:
-        estimate = _google_or_fallback_estimate(
-            tech.current_latitude, tech.current_longitude,
-            unit.latitude, unit.longitude,
-        )
-        current_count = len(_remaining_same_day_tasks(tech, active_dt))
-        ranked.append({
-            "technician": tech,
-            "name": tech.full_name,
-            "username": tech.user.username if tech.user else None,
-            "group": tech.group.name if tech.group else None,
-            "tech_role": tech.tech_role,
-            "specialty": tech.specialty,
-            "current_stops": current_count,
-            "straight_km": round(straight_km, 2),
-            "distance_km": estimate["distance_km"],
-            "duration_seconds": estimate["duration_seconds"],
-            "duration_min": estimate["duration_min"],
-            "source": estimate["source"],
-            "fallback_reason": estimate.get("fallback_reason"),
-        })
-    ranked.sort(key=lambda r: (r["duration_seconds"], r["current_stops"]))
-    for i, r in enumerate(ranked):
-        r["winner"] = (i == 0)
-    return ranked
-
-
-def _task_stops(tasks):
-    return [{
-        "id": t.id,
-        "lat": float(t.unit.latitude),
-        "lng": float(t.unit.longitude),
-        "is_aa": (t.priority or "").upper() == CallbackPriority.AA,
-        "payload": t,
-    } for t in tasks]
-
-
-def _rewrite_remaining_route(tech, tasks, active_dt):
-    """Preserve completed history; rewrite only same-day remaining route."""
-    day = active_dt.date()
-    Schedule.objects.filter(
-        technician=tech,
-        start_time__date=day,
-        end_time__gt=active_dt,
-    ).delete()
-
-    depot = (float(tech.current_latitude), float(tech.current_longitude))
-    ordered, _km = optimal_open_route(depot, _task_stops(tasks))
-
-    start = active_dt.replace(second=0, microsecond=0)
-    for seq, stop in enumerate(ordered, start=1):
-        task = stop["payload"]
-        end = start + timedelta(minutes=task.estimated_duration_min or 60)
-        Schedule.objects.create(
-            task=task,
-            technician=tech,
-            start_time=start,
-            end_time=end,
-            sequence_order=seq,
-            source="DISPATCH",
-        )
-        start = end + timedelta(minutes=15)
-    return ordered
-
-
-def _unit_json(unit):
-    return {
-        "id": unit.id,
-        "unit_name": unit.unit_name,
-        "unit_code": unit.unit_code,
-        "unit_type": unit.unit_type,
-        "address": unit.address,
-        "district": unit.district,
-        "latitude": float(unit.latitude),
-        "longitude": float(unit.longitude),
-        "region": _region(unit.longitude),
-    }
-
-
-def _candidate_json(r):
-    return {
-        "id": r["technician"].id,
-        "name": r["name"],
-        "username": r["username"],
-        "group": r["group"],
-        "tech_role": r["tech_role"],
-        "specialty": r["specialty"],
-        "current_stops": r["current_stops"],
-        "straight_km": r["straight_km"],
-        "distance_km": r["distance_km"],
-        "duration_min": r["duration_min"],
-        "source": r["source"],
-        "winner": r["winner"],
-    }
-
-
-class DispatchUnitSearchView(APIView):
-    permission_classes = [AllowAny]
+    This prevents manual latitude/longitude entry in the Flutter dashboard. The
+    supervisor selects a real portfolio unit; dispatch then uses that unit's
+    stored coordinates.
+    """
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
-        qs = Unit.objects.filter(is_active=True, latitude__isnull=False, longitude__isnull=False)
+        group = getattr(request.user, "supervised_group", None)
+
+        units = Unit.objects.filter(is_active=True)
+
+        # Prefer units already in this supervisor's operational scope. This is
+        # inferred from schedules/tasks rather than hard-coded region names.
+        if group is not None:
+            scheduled_unit_ids = Schedule.objects.filter(
+                technician__group=group,
+                task__unit__isnull=False,
+            ).values_list("task__unit_id", flat=True)
+            task_unit_ids = Task.objects.filter(
+                assigned_group=group,
+                unit__isnull=False,
+            ).values_list("unit_id", flat=True)
+            scoped_ids = set(scheduled_unit_ids) | set(task_unit_ids)
+            if scoped_ids:
+                units = units.filter(id__in=scoped_ids)
+
         if q:
-            qs = qs.filter(
-                Q(unit_name__icontains=q) |
-                Q(unit_code__icontains=q) |
-                Q(address__icontains=q) |
-                Q(district__icontains=q)
+            units = units.filter(
+                Q(unit_name__icontains=q)
+                | Q(unit_code__icontains=q)
+                | Q(address__icontains=q)
+                | Q(city__icontains=q)
             )
-        qs = qs.order_by("unit_name", "unit_code")[:SEARCH_LIMIT]
-        return Response({"units": [_unit_json(u) for u in qs]})
 
+        units = units.order_by("unit_name")[:500]
 
-class DispatchPreviewView(APIView):
-    permission_classes = [AllowAny]
+        unit_ids = [u.id for u in units]
+        backlog_counts = {
+            row["unit_id"]: row["count"]
+            for row in Task.objects.filter(
+                unit_id__in=unit_ids,
+                is_active=True,
+                is_unassigned=True,
+                task_type__operation_type=OperationType.CALLBACK,
+            ).values("unit_id").annotate(count=Count("id"))
+        }
+        callback_counts = {
+            row["unit_id"]: row["count"]
+            for row in Task.objects.filter(
+                unit_id__in=unit_ids,
+                is_active=True,
+                task_type__operation_type=OperationType.CALLBACK,
+            ).values("unit_id").annotate(count=Count("id"))
+        }
 
-    def post(self, request):
-        unit_id = request.data.get("unit_id")
-        if not unit_id:
-            return Response({"error": "unit_id is required"}, status=400)
-        unit = Unit.objects.filter(id=unit_id, is_active=True).first()
-        if not unit:
-            return Response({"error": "Selected unit not found"}, status=404)
-
-        priority = request.data.get("priority") or "B"
-        profile = _profile_from(priority, unit.unit_type)
-        active_dt = _active_datetime(request)
-        ranked = _rank_candidates(unit, active_dt)
-        if not ranked:
-            return Response({
-                "error": f"No available callback technicians in {_region(unit.longitude)} region",
-                "unit": _unit_json(unit),
-            }, status=400)
-
-        google_used = any(r["source"] == "GOOGLE_ROADS" for r in ranked)
         return Response({
-            "unit": _unit_json(unit),
-            "priority": profile["priority"],
-            "fault_type": profile["fault_type"],
-            "active_time": active_dt.isoformat(),
-            "candidate_count": len(ranked),
-            "source_note": (
-                "Google road travel time used for shortlisted candidates."
-                if google_used else
-                "Straight-line fallback/estimate used. Enable GOOGLE_MAPS_ENABLED for road travel time."
-            ),
-            "candidates": [_candidate_json(r) for r in ranked],
+            "units": [
+                {
+                    "id": u.id,
+                    "name": u.unit_name,
+                    "code": u.unit_code,
+                    "unit_type": u.unit_type,
+                    "address": u.address or "",
+                    "city": u.city or "",
+                    "latitude": float(u.latitude),
+                    "longitude": float(u.longitude),
+                    "callback_count": callback_counts.get(u.id, 0),
+                    "unassigned_callback_count": backlog_counts.get(u.id, 0),
+                }
+                for u in units
+                if u.latitude is not None and u.longitude is not None
+            ]
         })
 
-
 class RepairDispatchView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
+        # Prefer dispatching to an existing unit selected by the supervisor.
+        # Manual lat/lng is kept only as a backwards-compatible fallback.
+        selected_unit = None
         unit_id = request.data.get("unit_id")
-        unit = None
         if unit_id:
-            unit = Unit.objects.filter(id=unit_id, is_active=True).first()
-            if not unit:
-                return Response({"error": "Selected unit not found"}, status=404)
+            try:
+                selected_unit = Unit.objects.get(id=int(unit_id), is_active=True)
+                lat = float(selected_unit.latitude)
+                lng = float(selected_unit.longitude)
+            except (TypeError, ValueError, Unit.DoesNotExist):
+                return Response({"error": "Selected unit was not found or has no coordinates."}, status=400)
         else:
-            # Backward-compatible manual coordinate fallback.
             try:
                 lat = float(request.data.get("latitude"))
                 lng = float(request.data.get("longitude"))
             except (TypeError, ValueError):
-                return Response({"error": "unit_id or latitude/longitude required"}, status=400)
-            unit = Unit.objects.create(
-                unit_code=f"FAULT-{int(timezone.now().timestamp())}",
-                unit_name=f"Manual dispatch ({lat:.4f},{lng:.4f})",
-                unit_type=UnitType.ELEVATOR,
-                address=f"({lat:.4f}, {lng:.4f})",
-                city="Istanbul",
-                latitude=lat,
-                longitude=lng,
-                is_active=True,
-            )
+                return Response({"error": "Select an existing unit for dispatch."}, status=400)
 
-        priority = request.data.get("priority") or "B"
-        profile = _profile_from(priority, unit.unit_type)
-        description = request.data.get("description") or ""
-        active_dt = _active_datetime(request)
+        fault = request.data.get("fault_type") or "Elevator Fault"
+        prof = FAULT_TYPES.get(fault, FAULT_TYPES["Elevator Fault"])
 
-        ranked = _rank_candidates(unit, active_dt)
-        if not ranked:
-            return Response({"error": f"No available callback technician in {_region(unit.longitude)} region."}, status=400)
-        winner_row = ranked[0]
-        winner = winner_row["technician"]
+        active_now = _aware_active_datetime(request)
+        active_day = timezone.localtime(active_now).date()
+        supervisor_group = _current_group_for_request(request)
 
-        period = (
-            PlanningPeriod.objects.filter(start_date__lte=active_dt.date(), end_date__gte=active_dt.date(), is_active=True).first()
-            or PlanningPeriod.objects.filter(is_active=True).order_by("-start_date").first()
-        )
+        # eligible: callback technicians from the logged-in supervisor's group.
+        # Previously this searched every callback group; a Yusuf dispatch could
+        # be assigned to Can Doğan's technician, so Yusuf's live map/reports did
+        # not show it.
+        eligible_qs = Technician.objects.filter(
+            is_available=True,
+            is_active_employee=True,
+            current_latitude__isnull=False,
+            tech_role=TechnicianRole.CALLBACK,
+        ).select_related("user", "group")
+        if supervisor_group is not None:
+            eligible_qs = eligible_qs.filter(group=supervisor_group)
+        eligible = list(eligible_qs)
+        if not eligible:
+            return Response({"error": f"No active callback technician for {fault} in this supervisor group."}, status=400)
+
+        # cheapest-insertion: who grows least when this fault is added, based on
+        # the selected operating day, not old schedules from other dates.
+        fault_stop = (lat, lng)
+        scoreboard = []
+        best = None
+        for t in eligible:
+            depot = _depot(t)
+            cur = _tech_stops(t, active_day=active_day)
+            cur_km = _route_km(depot, cur)
+            new_km = _route_km(depot, cur + [fault_stop])
+            added = max(new_km - cur_km, 0.0)
+            scoreboard.append((t, added, len(cur)))
+            if best is None or added < best[1]:
+                best = (t, added, len(cur))
+
+        winner = best[0]
+
+        # planning period + task type + unit + task
+        today = active_day
+        period = (PlanningPeriod.objects.filter(start_date__lte=today, end_date__gte=today, is_active=True).first()
+                  or PlanningPeriod.objects.filter(is_active=True).order_by("-start_date").first())
         if not period:
             return Response({"error": "No active PlanningPeriod."}, status=400)
 
         ttype, _ = TaskType.objects.get_or_create(
-            code=f"DISP-CB-{profile['specialty']}",
-            defaults={
-                "name": f"Dispatch Callback ({profile['specialty']})",
-                "operation_type": OperationType.CALLBACK,
-                "required_specialty": profile["specialty"],
-                "required_technician_role": TechnicianRole.CALLBACK,
-                "base_duration_min": profile["duration"],
-                "sla_target_min": 60 if profile["priority"] == CallbackPriority.AA else 240,
-                "is_active": True,
-            },
-        )
+            code=f"REP-{prof['specialty']}",
+            defaults={"name": f"Repair ({prof['specialty']})",
+                      "operation_type": OperationType.CALLBACK,
+                      "required_specialty": prof["specialty"],
+                      "required_technician_role": TechnicianRole.CALLBACK,
+                      "base_duration_min": prof["dur"], "is_active": True})
+
+        if selected_unit is not None:
+            unit = selected_unit
+        else:
+            unit = Unit.objects.create(
+                unit_code=f"FAULT-{int(timezone.now().timestamp())}",
+                unit_name=f"{fault} ({lat:.4f},{lng:.4f})", unit_type=prof["unit"],
+                address=f"({lat:.4f},{lng:.4f})", city="Istanbul",
+                latitude=lat, longitude=lng, is_active=True)
 
         task = Task.objects.create(
             task_no=f"REP-{int(timezone.now().timestamp())}",
-            unit=unit,
-            task_type=ttype,
-            planning_period=period,
+            unit=unit, task_type=ttype, planning_period=period,
             created_by=(request.user if request.user.is_authenticated else winner.group.supervisor),
-            assigned_group=winner.group,
-            description=description or f"{profile['fault_type']} dispatched to existing unit",
-            status=TaskStatus.ASSIGNED,
-            priority=profile["priority"],
-            estimated_duration_min=profile["duration"],
-            release_time=active_dt,
-            is_active=True,
+            assigned_group=winner.group, description=(request.data.get("description") or f"{fault} dispatched to existing unit"),
+            status=TaskStatus.ASSIGNED, priority=prof["pr"],
+            estimated_duration_min=prof["dur"],
+            earliest_start=active_now,
+            latest_finish=active_now + timedelta(minutes=(60 if prof["pr"] == CallbackPriority.AA else 240)),
+            release_time=active_now,
+            is_active=True)
+
+        dispatch_schedule = _insert_dispatch_schedule(
+            winner=winner,
+            task=task,
+            priority=prof["pr"],
+            duration_min=int(prof["dur"]),
+            active_now=active_now,
         )
 
-        remaining = _remaining_same_day_tasks(winner, active_dt)
-        _rewrite_remaining_route(winner, remaining + [task], active_dt)
+        route_cache = _route_cache_for_day(winner, active_day)
 
-        scoreboard = [_candidate_json(r) for r in ranked]
+        # Response shaped to match BOTH the standalone repair panel AND the
+        # Flutter dashboard's DispatchResult.fromJson (task.unit.*, assigned_to.*).
         return Response({
-            "fault_type": profile["fault_type"],
-            "priority": profile["priority"],
+            "fault_type": fault,
+            "priority": prof["pr"],
             "assigned_to": {
-                "id": winner.id,
-                "name": winner.full_name,
+                "id": winner.id, "name": winner.full_name,
                 "username": winner.user.username if winner.user else None,
-                "tech_role": winner.tech_role,
-                "specialty": winner.specialty,
-                "group": winner.group.name if winner.group else None,
+                "tech_role": winner.tech_role, "specialty": winner.specialty,
+                "was_idle": best[2] == 0,
+            },
+            "schedule": {
+                "id": dispatch_schedule.id,
+                "date": active_day.isoformat(),
+                "start_time": dispatch_schedule.start_time.isoformat(),
+                "end_time": dispatch_schedule.end_time.isoformat(),
+                "sequence_order": dispatch_schedule.sequence_order,
+                "source": dispatch_schedule.source,
+            },
+            "route_cache": {
+                "source": route_cache.get("source"),
+                "cache_key": route_cache.get("cache_key"),
+                "points": len(route_cache.get("points") or []),
+                "error": route_cache.get("error"),
             },
             "task": {
-                "id": task.id,
-                "task_no": task.task_no,
-                "priority": task.priority,
-                "estimated_duration_min": task.estimated_duration_min,
-                "unit": {
-                    "id": unit.id,
-                    "name": unit.unit_name,
-                    "unit_code": unit.unit_code,
-                    "latitude": float(unit.latitude),
-                    "longitude": float(unit.longitude),
-                },
+                "id": task.id, "task_no": task.task_no, "priority": prof["pr"],
+                "estimated_duration_min": prof["dur"],
+                "unit": {"id": unit.id, "name": unit.unit_name, "code": unit.unit_code,
+                         "latitude": float(unit.latitude),
+                         "longitude": float(unit.longitude),
+                         "address": unit.address or ""},
             },
             "reason": (
-                f"{unit.unit_name} selected from existing units. "
-                f"{len(ranked)} shortlisted callback technician(s) in {_region(unit.longitude)}. "
-                f"{winner.full_name} had the fastest/lowest-cost travel estimate "
-                f"({winner_row['duration_min']} min, {winner_row['distance_km']} km, {winner_row['source']}). "
-                f"Remaining same-day route was rewritten from the operating clock time."
+                f"Existing unit: {unit.unit_name}. "
+                f"{len(scoreboard)} eligible callback technician(s). "
+                f"{winner.full_name} had the smallest added travel "
+                f"(+{round(best[1], 2)} km). "
+                f"Scheduled for {active_day.isoformat()} at {timezone.localtime(dispatch_schedule.start_time).strftime('%H:%M')}. "
+                + (" AA emergency placed first in the route." if prof["pr"] == CallbackPriority.AA else "")
             ),
-            "scoreboard": scoreboard,
+            "scoreboard": [
+                {"name": t.full_name, "role": t.tech_role, "specialty": t.specialty,
+                 "current_stops": stops, "added_km": round(added, 2),
+                 "km_from_dispatch": round(added, 2),
+                 "winner": (t.id == winner.id)}
+                for (t, added, stops) in sorted(scoreboard, key=lambda r: r[1])
+            ],
         }, status=201)
-
-
 
 
 class RepairPanelView(APIView):

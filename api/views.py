@@ -21,6 +21,7 @@ from .models import (
     PlanningPeriod,
     Unit,
     Technician,
+    LeaveRequest,
     TaskType,
     Task,
     OptimizationRun,
@@ -67,6 +68,16 @@ def create_audit_log(user, action, target_model, target_id=None, message=None, m
         message=message,
         metadata_json=metadata_json or {},
     )
+
+
+def technician_has_approved_leave(technician, active_day):
+    """True when an approved leave request covers the operating date."""
+    return LeaveRequest.objects.filter(
+        technician=technician,
+        status="APPROVED",
+        start_date__lte=active_day,
+        end_date__gte=active_day,
+    ).exists()
 
 
 class SupervisorGroupViewSet(viewsets.ReadOnlyModelViewSet):
@@ -474,6 +485,27 @@ class MyOptimizedRouteView(APIView):
         # technician's stops for the whole month benchmark, jumbled together.
         active_dt = get_active_datetime(request)
         active_day = active_dt.date()
+
+        # Approved leave must immediately remove the technician from the
+        # active mobile route. The schedule rows may remain as history,
+        # especially for already-finished instant-leave work, but the phone
+        # should not keep drawing a moving route while the tech is away.
+        if technician_has_approved_leave(technician, active_day):
+            print(f"🟡 {technician.full_name} is on approved leave on {active_day}; no active route returned.")
+            return Response({
+                "technician": technician.full_name,
+                "active_date": active_day.isoformat(),
+                "active_time": active_dt.isoformat(),
+                "on_leave": True,
+                "message": "You are currently on approved leave.",
+                "current_position": None,
+                "route_polyline": [],
+                "geometry_source": None,
+                "distance_km": None,
+                "duration_min": None,
+                "route": [],
+            })
+
         schedules = list(Schedule.objects
                          .filter(technician=technician,
                                  start_time__date=active_day,

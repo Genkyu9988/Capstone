@@ -335,7 +335,9 @@ class TechnicianStop {
   final double latitude;
   final double longitude;
   final int durationMin;
-  final String state; // done / current / upcoming
+  final String state; // done / current / on_route / upcoming
+  final DateTime? scheduledStart;
+  final DateTime? scheduledEnd;
 
   TechnicianStop({
     required this.stopNumber,
@@ -347,6 +349,8 @@ class TechnicianStop {
     required this.longitude,
     required this.durationMin,
     required this.state,
+    required this.scheduledStart,
+    required this.scheduledEnd,
   });
 
   factory TechnicianStop.fromJson(Map<String, dynamic> j) => TechnicianStop(
@@ -359,14 +363,61 @@ class TechnicianStop {
         longitude: (j['longitude'] as num).toDouble(),
         durationMin: j['duration_min'] ?? 0,
         state: (j['state'] ?? 'upcoming').toString(),
+        scheduledStart: j['scheduled_start'] == null
+            ? null
+            : DateTime.tryParse(j['scheduled_start'].toString()),
+        scheduledEnd: j['scheduled_end'] == null
+            ? null
+            : DateTime.tryParse(j['scheduled_end'].toString()),
       );
 }
+
+class DispatchUnitOption {
+  final int id;
+  final String name;
+  final String code;
+  final String unitType;
+  final String address;
+  final String city;
+  final double latitude;
+  final double longitude;
+  final int callbackCount;
+  final int unassignedCallbackCount;
+
+  DispatchUnitOption({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.unitType,
+    required this.address,
+    required this.city,
+    required this.latitude,
+    required this.longitude,
+    required this.callbackCount,
+    required this.unassignedCallbackCount,
+  });
+
+  factory DispatchUnitOption.fromJson(Map<String, dynamic> j) => DispatchUnitOption(
+        id: (j['id'] as num).toInt(),
+        name: (j['name'] ?? '').toString(),
+        code: (j['code'] ?? '').toString(),
+        unitType: (j['unit_type'] ?? '').toString(),
+        address: (j['address'] ?? '').toString(),
+        city: (j['city'] ?? '').toString(),
+        latitude: (j['latitude'] as num).toDouble(),
+        longitude: (j['longitude'] as num).toDouble(),
+        callbackCount: ((j['callback_count'] ?? 0) as num).toInt(),
+        unassignedCallbackCount: ((j['unassigned_callback_count'] ?? 0) as num).toInt(),
+      );
+}
+
 
 class DispatchResult {
   final String assignedToName;
   final String assignedToUsername;
   final String taskNo;
   final String priority;
+  final String unitName;
   final double unitLat;
   final double unitLng;
   final String reason;
@@ -377,6 +428,7 @@ class DispatchResult {
     required this.assignedToUsername,
     required this.taskNo,
     required this.priority,
+    required this.unitName,
     required this.unitLat,
     required this.unitLng,
     required this.reason,
@@ -392,6 +444,7 @@ class DispatchResult {
       assignedToUsername: assigned['username'] ?? '?',
       taskNo: task['task_no'] ?? '',
       priority: task['priority'] ?? 'NORMAL',
+      unitName: unit['name'] ?? '',
       unitLat: (unit['latitude'] as num).toDouble(),
       unitLng: (unit['longitude'] as num).toDouble(),
       reason: j['reason'] ?? '',
@@ -400,107 +453,6 @@ class DispatchResult {
           .toList(),
     );
   }
-}
-
-
-class DispatchUnit {
-  final int id;
-  final String unitName;
-  final String unitCode;
-  final String unitType;
-  final String address;
-  final String? district;
-  final double latitude;
-  final double longitude;
-  final String region;
-
-  DispatchUnit({
-    required this.id,
-    required this.unitName,
-    required this.unitCode,
-    required this.unitType,
-    required this.address,
-    required this.district,
-    required this.latitude,
-    required this.longitude,
-    required this.region,
-  });
-
-  factory DispatchUnit.fromJson(Map<String, dynamic> j) => DispatchUnit(
-        id: j['id'] ?? 0,
-        unitName: (j['unit_name'] ?? '').toString(),
-        unitCode: (j['unit_code'] ?? '').toString(),
-        unitType: (j['unit_type'] ?? '').toString(),
-        address: (j['address'] ?? '').toString(),
-        district: j['district']?.toString(),
-        latitude: (j['latitude'] as num).toDouble(),
-        longitude: (j['longitude'] as num).toDouble(),
-        region: (j['region'] ?? '').toString(),
-      );
-
-  String get title => unitName.isEmpty ? unitCode : unitName;
-  String get subtitle => [unitCode, district, address]
-      .where((e) => e != null && e.toString().trim().isNotEmpty)
-      .join(' • ');
-}
-
-class DispatchCandidate {
-  final int id;
-  final String name;
-  final String group;
-  final int currentStops;
-  final double distanceKm;
-  final int durationMin;
-  final String source;
-  final bool winner;
-
-  DispatchCandidate({
-    required this.id,
-    required this.name,
-    required this.group,
-    required this.currentStops,
-    required this.distanceKm,
-    required this.durationMin,
-    required this.source,
-    required this.winner,
-  });
-
-  factory DispatchCandidate.fromJson(Map<String, dynamic> j) => DispatchCandidate(
-        id: j['id'] ?? 0,
-        name: (j['name'] ?? '?').toString(),
-        group: (j['group'] ?? '').toString(),
-        currentStops: j['current_stops'] ?? 0,
-        distanceKm: ((j['distance_km'] ?? 0) as num).toDouble(),
-        durationMin: j['duration_min'] ?? 0,
-        source: (j['source'] ?? '').toString(),
-        winner: j['winner'] == true,
-      );
-}
-
-class DispatchPreview {
-  final DispatchUnit unit;
-  final String priority;
-  final String faultType;
-  final String sourceNote;
-  final List<DispatchCandidate> candidates;
-
-  DispatchPreview({
-    required this.unit,
-    required this.priority,
-    required this.faultType,
-    required this.sourceNote,
-    required this.candidates,
-  });
-
-  factory DispatchPreview.fromJson(Map<String, dynamic> j) => DispatchPreview(
-        unit: DispatchUnit.fromJson(j['unit'] as Map<String, dynamic>),
-        priority: (j['priority'] ?? '').toString(),
-        faultType: (j['fault_type'] ?? '').toString(),
-        sourceNote: (j['source_note'] ?? '').toString(),
-        candidates: ((j['candidates'] as List?) ?? [])
-            .map((e) => DispatchCandidate.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
 }
 
 class ApiClient {
@@ -531,50 +483,43 @@ class ApiClient {
     return DashboardState(techs, DateTime.now(), activeDate, activeTime);
   }
 
-  Future<List<DispatchUnit>> searchDispatchUnits(String query) async {
-    final uri = Uri.parse('$kBaseUrl/api/repair/units/search/')
-        .replace(queryParameters: {'q': query});
+  Future<List<DispatchUnitOption>> fetchDispatchUnits({String query = ''}) async {
+    final uri = Uri.parse('$kBaseUrl/api/repair/dispatch-units/').replace(
+      queryParameters: query.trim().isEmpty ? null : {'q': query.trim()},
+    );
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
-      throw Exception('GET /api/repair/units/search/ -> ${r.statusCode}: ${r.body}');
+      throw Exception('GET /api/repair/dispatch-units/ -> ${r.statusCode}: ${r.body}');
     }
     final j = jsonDecode(r.body) as Map<String, dynamic>;
     return ((j['units'] as List?) ?? [])
-        .map((e) => DispatchUnit.fromJson(e as Map<String, dynamic>))
+        .map((e) => DispatchUnitOption.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  Future<DispatchPreview> previewDispatch({
-    required int unitId,
-    required String priority,
-  }) async {
-    final r = await http.post(
-      Uri.parse('$kBaseUrl/api/repair/dispatch/preview/'),
-      headers: _headers,
-      body: jsonEncode({
-        'unit_id': unitId,
-        'priority': priority,
-      }),
-    );
-    if (r.statusCode != 200) {
-      throw Exception('POST /api/repair/dispatch/preview/ -> ${r.statusCode}: ${r.body}');
-    }
-    return DispatchPreview.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
-  }
-
   Future<DispatchResult> dispatchTask({
-    required int unitId,
+    int? unitId,
+    double? latitude,
+    double? longitude,
     required String priority,
+    required String faultType,
     String description = '',
   }) async {
+    final payload = <String, dynamic>{
+      'priority': priority,
+      'fault_type': faultType,
+      'description': description,
+    };
+    if (unitId != null) {
+      payload['unit_id'] = unitId;
+    } else {
+      payload['latitude'] = latitude;
+      payload['longitude'] = longitude;
+    }
     final r = await http.post(
       Uri.parse('$kBaseUrl/api/repair/dispatch/'),
       headers: _headers,
-      body: jsonEncode({
-        'unit_id': unitId,
-        'priority': priority,
-        'description': description,
-      }),
+      body: jsonEncode(payload),
     );
     if (r.statusCode != 201 && r.statusCode != 200) {
       throw Exception('POST /api/repair/dispatch/ -> ${r.statusCode}: ${r.body}');
@@ -611,15 +556,24 @@ class ApiClient {
     required String fullName,
     required String techRole,
     required String specialty,
+    String addMode = 'NORMAL',
+    double? latitude,
+    double? longitude,
+    DateTime? activeTime,
   }) async {
+    final payload = <String, dynamic>{
+      'full_name': fullName,
+      'tech_role': techRole,
+      'specialty': specialty,
+      'add_mode': addMode,
+      if (activeTime != null) 'as_of': activeTime.toUtc().toIso8601String(),
+      if (latitude != null) 'current_latitude': latitude,
+      if (longitude != null) 'current_longitude': longitude,
+    };
     final r = await http.post(
       Uri.parse('$kBaseUrl/api/technicians/add/'),
       headers: _headers,
-      body: jsonEncode({
-        'full_name': fullName,
-        'tech_role': techRole,
-        'specialty': specialty,
-      }),
+      body: jsonEncode(payload),
     );
     if (r.statusCode != 201 && r.statusCode != 200) {
       throw Exception('POST /api/technicians/add/ -> ${r.statusCode}: ${r.body}');
@@ -638,6 +592,33 @@ class ApiClient {
     }
     final j = jsonDecode(r.body) as Map<String, dynamic>;
     return (j['message'] ?? 'Technician removed.').toString();
+  }
+
+  Future<Map<String, dynamic>> previewTechnicianImpact({
+    required String action,
+    int? technicianId,
+    String? techRole,
+    String? specialty,
+    String addMode = 'NORMAL',
+    DateTime? activeTime,
+  }) async {
+    final payload = <String, dynamic>{
+      'action': action,
+      'add_mode': addMode,
+      if (activeTime != null) 'as_of': activeTime.toUtc().toIso8601String(),
+      if (technicianId != null) 'technician_id': technicianId,
+      if (techRole != null) 'tech_role': techRole,
+      if (specialty != null) 'specialty': specialty,
+    };
+    final r = await http.post(
+      Uri.parse('$kBaseUrl/api/technicians/impact-preview/'),
+      headers: _headers,
+      body: jsonEncode(payload),
+    );
+    if (r.statusCode != 200) {
+      throw Exception('POST /api/technicians/impact-preview/ -> ${r.statusCode}: ${r.body}');
+    }
+    return Map<String, dynamic>.from(jsonDecode(r.body) as Map);
   }
 
   Future<List<Map<String, dynamic>>> fetchReportMonths({String asOf = ''}) async {
@@ -671,10 +652,11 @@ class ApiClient {
   }
 
   String exportUrl(int year, int month,
-      {String sort = '', String order = '', String search = ''}) {
+      {String asOf = '', String sort = '', String order = '', String search = ''}) {
     return Uri.parse('$kBaseUrl/api/reports/monthly/export/').replace(
         queryParameters: {
           'year': '$year', 'month': '$month',
+          if (asOf.isNotEmpty) 'as_of': asOf,
           if (sort.isNotEmpty) 'sort': sort,
           if (order.isNotEmpty) 'order': order,
           if (search.isNotEmpty) 'search': search,
@@ -683,7 +665,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> fetchUnitHistorySummary(
       {String search = '', int page = 1, int pageSize = 50, String asOf = '',
-       String sort = '', String order = ''}) async {
+       String sort = '', String order = '', String status = 'all'}) async {
     final uri = Uri.parse('$kBaseUrl/api/units/history/').replace(
         queryParameters: {
           if (search.isNotEmpty) 'search': search,
@@ -692,6 +674,7 @@ class ApiClient {
           if (asOf.isNotEmpty) 'as_of': asOf,
           if (sort.isNotEmpty) 'sort': sort,
           if (order.isNotEmpty) 'order': order,
+          if (status.isNotEmpty && status != 'all') 'status': status,
         });
     final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
@@ -702,18 +685,28 @@ class ApiClient {
 
   Future<Map<String, dynamic>> fetchUnitHistoryDetail(int unitId,
       {String asOf = ''}) async {
-    final base = '$kBaseUrl/api/units/$unitId/history/';
-    final r = await http.get(
-      Uri.parse(asOf.isNotEmpty ? '$base?as_of=$asOf' : base),
-      headers: _headers,
-    );
+    final uri = Uri.parse('$kBaseUrl/api/units/$unitId/history/').replace(
+        queryParameters: {
+          if (asOf.isNotEmpty) 'as_of': asOf,
+        });
+    final r = await http.get(uri, headers: _headers);
     if (r.statusCode != 200) {
       throw Exception('GET /api/units/$unitId/history/ -> ${r.statusCode}: ${r.body}');
     }
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
-  String unitHistoryExportUrl() => '$kBaseUrl/api/units/history/export/';
+  String unitHistoryExportUrl({String asOf = '', String sort = '', String order = '', String search = '', String status = 'all'}) {
+    return Uri.parse('$kBaseUrl/api/units/history/export/').replace(
+      queryParameters: {
+        if (asOf.isNotEmpty) 'as_of': asOf,
+        if (sort.isNotEmpty) 'sort': sort,
+        if (order.isNotEmpty) 'order': order,
+        if (search.isNotEmpty) 'search': search,
+        if (status.isNotEmpty && status != 'all') 'status': status,
+      },
+    ).toString();
+  }
 
   Future<Map<String, dynamic>> fetchMaintenanceOverview(
       {String type = '', String search = '', int page = 1, String asOf = '',
@@ -735,11 +728,12 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchCallbackOverview(
-      {String priority = '', String search = '', int page = 1, String asOf = '',
+      {String priority = '', String status = '', String search = '', int page = 1, String asOf = '',
        String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/callbacks/').replace(
         queryParameters: {
           if (priority.isNotEmpty) 'priority': priority,
+          if (status.isNotEmpty) 'status': status,
           if (search.isNotEmpty) 'search': search,
           'page': '$page',
           if (asOf.isNotEmpty) 'as_of': asOf,
@@ -753,14 +747,28 @@ class ApiClient {
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
+  String callbackOverviewExportUrl({String priority = '', String status = '', String search = '', String asOf = ''}) {
+    return Uri.parse('$kBaseUrl/api/overview/callbacks/export/').replace(
+      queryParameters: {
+        if (priority.isNotEmpty) 'priority': priority,
+        if (status.isNotEmpty) 'status': status,
+        if (search.isNotEmpty) 'search': search,
+        if (asOf.isNotEmpty) 'as_of': asOf,
+      },
+    ).toString();
+  }
+
   Future<Map<String, dynamic>> fetchMonthlyLog(
       int year, int month, {int page = 1, String asOf = '',
-      String search = '', String sort = '', String order = ''}) async {
+      String search = '', String status = '', String priority = '',
+      String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/monthly-log/').replace(
         queryParameters: {
           'year': '$year', 'month': '$month', 'page': '$page',
           if (asOf.isNotEmpty) 'as_of': asOf,
           if (search.isNotEmpty) 'search': search,
+          if (status.isNotEmpty) 'status': status,
+          if (priority.isNotEmpty) 'priority': priority,
           if (sort.isNotEmpty) 'sort': sort,
           if (order.isNotEmpty) 'order': order,
         });
@@ -773,12 +781,16 @@ class ApiClient {
 
   Future<Map<String, dynamic>> fetchDailyReport(
       {String date = '', String technicianId = '', String asOf = '',
+       String search = '', String status = '', String type = '',
        String sort = '', String order = ''}) async {
     final uri = Uri.parse('$kBaseUrl/api/overview/daily-report/').replace(
         queryParameters: {
           if (date.isNotEmpty) 'date': date,
           if (technicianId.isNotEmpty) 'technician_id': technicianId,
           if (asOf.isNotEmpty) 'as_of': asOf,
+          if (search.isNotEmpty) 'search': search,
+          if (status.isNotEmpty && status.toLowerCase() != 'all') 'status': status,
+          if (type.isNotEmpty && type.toLowerCase() != 'all') 'type': type,
           if (sort.isNotEmpty) 'sort': sort,
           if (order.isNotEmpty) 'order': order,
         });
@@ -825,25 +837,24 @@ class DashboardController extends ChangeNotifier {
     }
   }
 
-  Future<List<DispatchUnit>> searchDispatchUnits(String query) {
-    return _api.searchDispatchUnits(query);
+  Future<List<DispatchUnitOption>> fetchDispatchUnits({String query = ''}) {
+    return _api.fetchDispatchUnits(query: query);
   }
 
-  Future<DispatchPreview> previewDispatch({
-    required int unitId,
+  Future<DispatchResult> dispatch({
+    int? unitId,
+    double? latitude,
+    double? longitude,
     required String priority,
-  }) {
-    return _api.previewDispatch(unitId: unitId, priority: priority);
-  }
-
-  Future<DispatchResult> dispatchUnit({
-    required int unitId,
-    required String priority,
+    required String faultType,
     String description = '',
   }) async {
     final result = await _api.dispatchTask(
       unitId: unitId,
+      latitude: latitude,
+      longitude: longitude,
       priority: priority,
+      faultType: faultType,
       description: description,
     );
     await refresh(); // immediately re-pull so map updates
@@ -889,10 +900,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
 
     final tabs = <_TabDef>[
       _TabDef(const _NavItem(Icons.map_outlined, Icons.map, 'Live Map'),
-          (st) => LiveMapView(state: st)),
-    
-      _TabDef(const _NavItem(Icons.engineering_outlined, Icons.engineering, 'Technicians'),
-          (st) => TechniciansView(state: st, onChanged: () => _controller.refresh())),
+          (st) => LiveMapView(state: st, onChanged: () => _controller.refresh())),
       _TabDef(const _NavItem(Icons.event_busy_outlined, Icons.event_busy, 'Leave Requests'),
           (st) => LeaveRequestsView(
               activeDate: st.activeDate,
@@ -913,7 +921,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
       _TabDef(const _NavItem(Icons.calendar_month_outlined, Icons.calendar_month, 'Monthly Log'),
           (st) => MonthlyLogTab(activeDate: st.activeDate)),
       _TabDef(const _NavItem(Icons.today_outlined, Icons.today, 'Daily Report'),
-          (st) => DailyReportTab(activeDate: st.activeDate)),
+          (st) => DailyReportTab(activeDate: st.activeDate, activeTime: st.activeTime)),
     ];
     return tabs;
   }
@@ -939,7 +947,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
       _TabDef(const _NavItem(Icons.calendar_month_outlined, Icons.calendar_month, 'Full · Monthly Log'),
           (st) => MonthlyLogTab(activeDate: st.activeDate, fullSchedule: true)),
       _TabDef(const _NavItem(Icons.today_outlined, Icons.today, 'Full · Daily Report'),
-          (st) => DailyReportTab(activeDate: st.activeDate, fullSchedule: true)),
+          (st) => DailyReportTab(activeDate: st.activeDate, activeTime: st.activeTime, fullSchedule: true)),
     ];
   }
 
@@ -1338,7 +1346,8 @@ class _NotificationBell extends StatelessWidget {
 
 class LiveMapView extends StatefulWidget {
   final DashboardState state;
-  const LiveMapView({super.key, required this.state});
+  final VoidCallback? onChanged;
+  const LiveMapView({super.key, required this.state, this.onChanged});
 
   @override
   State<LiveMapView> createState() => _LiveMapViewState();
@@ -1397,6 +1406,8 @@ class _LiveMapViewState extends State<LiveMapView> {
                 colorFor: _colorForTech,
                 selectedTechId: _selectedTechId,
                 onSelect: _toggle,
+                onChanged: widget.onChanged,
+                activeTime: widget.state.activeTime,
               ),
             ),
           ],
@@ -1582,9 +1593,9 @@ class _MapPanel extends StatelessWidget {
                     child: Text(
                       totalFleet == 0
                           ? 'No active technicians — run seed_demo_fleet.py'
-                          : 'No Google-routed technicians to show yet.\n'
-                              'All $totalFleet are still scheduled '
-                              '(visible in the console).',
+                          : 'No cached Google routes to show yet.\n'
+                              'All $totalFleet are still scheduled, but this date needs '
+                              'precache_google_routes or the cache was overwritten.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 14),
                     ),
@@ -1683,16 +1694,289 @@ class _StopPin extends StatelessWidget {
   }
 }
 
+
+class _ImpactPreviewBox extends StatelessWidget {
+  final String action; // ADD / REMOVE
+  final int? technicianId;
+  final String? techRole;
+  final String? specialty;
+  final String addMode;
+  final DateTime? activeTime;
+
+  const _ImpactPreviewBox({
+    required this.action,
+    this.technicianId,
+    this.techRole,
+    this.specialty,
+    this.addMode = 'NORMAL',
+    this.activeTime,
+    super.key,
+  });
+
+  Color _riskColor(String risk) {
+    switch (risk) {
+      case 'BALANCED':
+        return Colors.green.shade700;
+      case 'OVERLOAD':
+        return Colors.red.shade700;
+      case 'UNDERLOAD':
+        return Colors.orange.shade800;
+      default:
+        return Colors.blueGrey.shade700;
+    }
+  }
+
+  Color _riskBackground(String risk) {
+    switch (risk) {
+      case 'BALANCED':
+        return Colors.green.shade50;
+      case 'OVERLOAD':
+        return Colors.red.shade50;
+      case 'UNDERLOAD':
+        return Colors.orange.shade50;
+      default:
+        return Colors.blueGrey.shade50;
+    }
+  }
+
+  Widget _metric(String label, String value, {Color? valueColor}) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.blueGrey.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+          const SizedBox(height: 4),
+          Text(value, style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: valueColor ?? Colors.blueGrey.shade900,
+          )),
+        ],
+      ),
+    );
+  }
+
+  String _fmtPct(dynamic v) {
+    if (v == null) return 'N/A';
+    return '${v.toString()}%';
+  }
+
+  Widget _backlogTasksPreview(List<dynamic> tasks, {required bool isCallback}) {
+    if (tasks.isEmpty) return const SizedBox.shrink();
+    final title = isCallback
+        ? 'Unassigned callback tasks used for suggested location'
+        : 'Unassigned maintenance tasks used for suggested location';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        Text(title,
+            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.blueGrey.shade800, fontSize: 12)),
+        const SizedBox(height: 4),
+        for (final raw in tasks.take(4))
+          Builder(builder: (_) {
+            final t = Map<String, dynamic>.from(raw as Map);
+            final priority = (t['priority'] ?? '').toString();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                '${t['task_no'] ?? '-'} · ${t['unit_name'] ?? '-'}${priority.isNotEmpty ? ' · $priority' : ''}',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.blueGrey.shade700, fontSize: 11),
+              ),
+            );
+          }),
+        if (tasks.length > 4)
+          Text('+${tasks.length - 4} more backlog task(s)',
+              style: TextStyle(color: Colors.blueGrey.shade600, fontSize: 11)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: ApiClient().previewTechnicianImpact(
+        action: action,
+        technicianId: technicianId,
+        techRole: techRole,
+        specialty: specialty,
+        addMode: addMode,
+        activeTime: activeTime,
+      ),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blueGrey.shade100),
+            ),
+            child: const Row(
+              children: [
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 10),
+                Text('Calculating add/remove impact...'),
+              ],
+            ),
+          );
+        }
+        if (snap.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade100),
+            ),
+            child: Text('Impact preview unavailable: ${snap.error}',
+                style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+          );
+        }
+        final m = snap.data ?? <String, dynamic>{};
+        final risk = (m['risk'] ?? 'WATCH').toString();
+        final riskColor = _riskColor(risk);
+        final isCallback = (m['role'] ?? '') == 'CALLBACK';
+        final current = m['current_active'] ?? '-';
+        final proposed = m['proposed_active'] ?? '-';
+        final rec = m['recommended_active'] ?? '-';
+        final projectedUtil = m['projected_utilization_pct'];
+        final dutyUtil = m['projected_duty_utilization_pct'];
+        final serviceUtil = m['projected_service_utilization_pct'];
+        final sla = m['sla_pct'];
+        final scopeLabel = (m['scope_label'] ?? '').toString();
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _riskBackground(risk),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: riskColor.withOpacity(0.25)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.insights, color: riskColor, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Impact preview',
+                        style: TextStyle(fontWeight: FontWeight.w800, color: riskColor)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: riskColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text((m['risk_label'] ?? risk).toString(),
+                        style: TextStyle(color: riskColor, fontWeight: FontWeight.w800, fontSize: 11)),
+                  ),
+                ],
+              ),
+              if (scopeLabel.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Scope: $scopeLabel', style: TextStyle(color: Colors.blueGrey.shade600, fontSize: 11)),
+              ],
+              const SizedBox(height: 10),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 2.7,
+                children: [
+                  _metric('Active technicians', '$current → $proposed'),
+                  _metric('Recommended', '$rec'),
+                  _metric(isCallback ? 'Duty utilization' : 'Utilization', _fmtPct(projectedUtil), valueColor: riskColor),
+                  _metric(isCallback ? 'Service util.' : 'Avg load', _fmtPct(isCallback ? serviceUtil : projectedUtil)),
+                  if (isCallback) _metric('SLA now', _fmtPct(sla)),
+                  if (isCallback) _metric('AA / B', '${m['aa_count'] ?? 0} / ${m['b_count'] ?? 0}'),
+                  if (!isCallback) _metric('Jobs', '${m['jobs'] ?? 0}'),
+                  if (!isCallback) _metric('Days', '${m['scheduled_days'] ?? 0}'),
+                ],
+              ),
+              if (action == 'ADD') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.65),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blueGrey.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(addMode == 'BACKLOG' ? Icons.place : Icons.home_work_outlined, size: 16, color: Colors.blueGrey.shade700),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              (m['placement_note'] ?? '').toString(),
+                              style: TextStyle(color: Colors.blueGrey.shade800, fontWeight: FontWeight.w600, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (addMode == 'BACKLOG') ...[
+                        const SizedBox(height: 6),
+                        Wrap(spacing: 6, runSpacing: 6, children: [
+                          Chip(
+                            label: Text(isCallback
+                                ? "Unassigned callbacks: ${m['unassigned_count'] ?? 0}"
+                                : "Maintenance backlog: ${m['unassigned_count'] ?? 0}"),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          if (isCallback) Chip(label: Text("AA: ${m['unassigned_aa_count'] ?? 0}"), visualDensity: VisualDensity.compact),
+                          if (isCallback) Chip(label: Text("B: ${m['unassigned_b_count'] ?? 0}"), visualDensity: VisualDensity.compact),
+                        ]),
+                        _backlogTasksPreview(((m['unassigned_tasks'] as List?) ?? const []), isCallback: isCallback),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text((m['optimal_text'] ?? '').toString(),
+                  style: TextStyle(color: Colors.blueGrey.shade800, fontWeight: FontWeight.w600, fontSize: 12)),
+              const SizedBox(height: 4),
+              Text((isCallback ? m['sla_note'] : m['recommendation'] ?? '').toString(),
+                  style: TextStyle(color: Colors.blueGrey.shade700, fontSize: 12)),
+              const SizedBox(height: 4),
+              Text('Preview only. Supervisor still chooses whether to apply the change.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _TechniciansSidePanel extends StatefulWidget {
   final List<TechnicianState> technicians;
   final Color Function(TechnicianState) colorFor;
   final int? selectedTechId;
   final void Function(int id) onSelect;
+  final VoidCallback? onChanged;
+  final DateTime activeTime;
   const _TechniciansSidePanel({
     required this.technicians,
     required this.colorFor,
     required this.selectedTechId,
     required this.onSelect,
+    required this.activeTime,
+    this.onChanged,
   });
 
   @override
@@ -1703,6 +1987,7 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
   String _query = '';
   String _roleFilter = 'ALL';      // ALL / MAINTENANCE / CALLBACK
   String _specFilter = 'ALL';      // ALL / ELEVATOR / ESCALATOR / BOTH (only under Maintenance)
+  bool _busy = false;
 
   // --- group composition, derived from the actual technicians present -------
   bool get _hasMaintenance =>
@@ -1757,6 +2042,85 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
     );
   }
 
+  TechnicianState? get _selectedVisibleTech {
+    final selected = widget.selectedTechId;
+    if (selected == null) return null;
+    for (final t in _filtered) {
+      if (t.id == selected) return t;
+    }
+    return null;
+  }
+
+  Future<void> _confirmRemoveSelectedTechnician(BuildContext context) async {
+    final tech = _selectedVisibleTech;
+    if (tech == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a technician first.')),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove technician?'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${tech.name} will be removed from the active roster.\n\n'
+                  'Their work history is kept for reports, and the schedule can be rebuilt '
+                  'without deleting any historical data.',
+                ),
+                const SizedBox(height: 12),
+                _ImpactPreviewBox(
+                  key: ValueKey('remove-${tech.id}'),
+                  action: 'REMOVE',
+                  technicianId: tech.id,
+                  activeTime: widget.activeTime,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.person_remove_alt_1, size: 18),
+            label: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final msg = await ApiClient().removeTechnician(tech.id);
+      widget.onChanged?.call();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not remove technician: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _showAddTechnicianDialog(BuildContext context) async {
     final nameCtrl = TextEditingController();
 
@@ -1770,8 +2134,21 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
 
     String role = allowedRoles.first;
     String spec = role == 'CALLBACK' ? 'BOTH' : 'ELEVATOR';
+    String addMode = 'NORMAL'; // NORMAL / BACKLOG
     bool saving = false;
     String? err;
+
+    String _nearBacklogLabel(String r) =>
+        r == 'CALLBACK' ? 'Near callback backlog' : 'Near maintenance backlog';
+
+    String _addModeHelp(String r, String mode) {
+      if (mode != 'BACKLOG') {
+        return 'Adds the technician at the normal supervisor group/base location.';
+      }
+      return r == 'CALLBACK'
+          ? 'Adds the callback technician near current unassigned callback backlog. Use this when AA/B callbacks need nearby capacity.'
+          : 'Adds the maintenance technician near current unassigned maintenance backlog. Use this when planned maintenance tasks need nearby capacity.';
+    }
 
     await showDialog<void>(
       context: context,
@@ -1779,11 +2156,33 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
         builder: (ctx, setLocal) => AlertDialog(
           title: const Text('Add Technician'),
           content: SizedBox(
-            width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                const Text('Add mode', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  ChoiceChip(
+                    label: const Text('Normal add'),
+                    selected: addMode == 'NORMAL',
+                    onSelected: (_) => setLocal(() => addMode = 'NORMAL'),
+                  ),
+                  ChoiceChip(
+                    label: Text(_nearBacklogLabel(role)),
+                    selected: addMode == 'BACKLOG',
+                    onSelected: (_) => setLocal(() => addMode = 'BACKLOG'),
+                  ),
+                ]),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 12),
+                  child: Text(
+                    _addModeHelp(role, addMode),
+                    style: TextStyle(color: Colors.blueGrey.shade600, fontSize: 12),
+                  ),
+                ),
                 TextField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(
@@ -1839,12 +2238,22 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
                         onSelected: (_) => setLocal(() => spec = s),
                       ),
                   ]),
+                const SizedBox(height: 12),
+                _ImpactPreviewBox(
+                  key: ValueKey('add-$role-$spec-$addMode'),
+                  action: 'ADD',
+                  techRole: role,
+                  specialty: spec,
+                  addMode: addMode,
+                  activeTime: widget.activeTime,
+                ),
                 if (err != null) ...[
                   const SizedBox(height: 10),
                   Text(err!, style: const TextStyle(color: Colors.red, fontSize: 12)),
                 ],
               ],
             ),
+          ),
           ),
           actions: [
             TextButton(
@@ -1865,8 +2274,11 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
                           fullName: nameCtrl.text.trim(),
                           techRole: role,
                           specialty: spec,
+                          addMode: addMode,
+                          activeTime: widget.activeTime,
                         );
                         if (ctx.mounted) Navigator.pop(ctx);
+                        widget.onChanged?.call();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text(msg)),
@@ -1880,7 +2292,7 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
                   ? const SizedBox(
                       width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Add'),
+                  : Text(addMode == 'BACKLOG' ? 'Add near backlog' : 'Add'),
             ),
           ],
         ),
@@ -1904,10 +2316,34 @@ class _TechniciansSidePanelState extends State<_TechniciansSidePanel> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.only(right: 6),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
               IconButton(
                 tooltip: 'Add technician',
                 icon: Icon(Icons.person_add_alt_1, color: Colors.blue.shade800, size: 20),
-                onPressed: () => _showAddTechnicianDialog(context),
+                onPressed: _busy ? null : () => _showAddTechnicianDialog(context),
+              ),
+              IconButton(
+                tooltip: _selectedVisibleTech == null
+                    ? 'Select a technician to remove'
+                    : 'Remove selected technician',
+                icon: Icon(
+                  Icons.person_remove_alt_1,
+                  color: _selectedVisibleTech == null
+                      ? Colors.grey.shade400
+                      : Colors.red.shade500,
+                  size: 20,
+                ),
+                onPressed: _busy || _selectedVisibleTech == null
+                    ? null
+                    : () => _confirmRemoveSelectedTechnician(context),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2021,6 +2457,55 @@ class _TechnicianTile extends StatelessWidget {
     this.onTap,
     this.onRemove,
   });
+
+  String _stopStatusText(TechnicianStop s) {
+    switch (s.state) {
+      case 'done':
+        return 'DONE';
+      case 'current':
+        return 'ON SITE';
+      case 'on_route':
+        return 'ON ROUTE';
+      default:
+        return 'ON PLAN';
+    }
+  }
+
+  Color _stopStatusColor(TechnicianStop s) {
+    switch (s.state) {
+      case 'done':
+        return Colors.green.shade700;
+      case 'current':
+        return Colors.blue.shade700;
+      case 'on_route':
+        return Colors.orange.shade800;
+      default:
+        return Colors.grey.shade600;
+    }
+  }
+
+  IconData _stopStatusIcon(TechnicianStop s) {
+    switch (s.state) {
+      case 'done':
+        return Icons.check;
+      case 'current':
+        return Icons.build_circle_outlined;
+      case 'on_route':
+        return Icons.near_me;
+      default:
+        return Icons.schedule;
+    }
+  }
+
+  String _hm(DateTime? dt) {
+    if (dt == null) return '';
+    // The backend active clock is an operating/simulation clock. Do not call
+    // toLocal(), otherwise Windows/Istanbul timezone adds +3 hours and the
+    // row can say 16:46 while the backend correctly marks it DONE at 14:50.
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2138,13 +2623,59 @@ class _TechnicianTile extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            s.unitName,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.unitName,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  decoration: s.state == 'done'
+                                      ? TextDecoration.lineThrough
+                                      : TextDecoration.none,
+                                  color: s.state == 'done'
+                                      ? Colors.grey.shade600
+                                      : Colors.grey.shade900,
+                                ),
+                              ),
+                              if (s.scheduledStart != null && s.scheduledEnd != null)
+                                Text(
+                                  '${_hm(s.scheduledStart)}–${_hm(s.scheduledEnd)}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        if (s.priority == 'AA')
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: _stopStatusColor(s).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _stopStatusColor(s).withOpacity(0.35)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(_stopStatusIcon(s), size: 11, color: _stopStatusColor(s)),
+                              const SizedBox(width: 3),
+                              Text(
+                                _stopStatusText(s),
+                                style: TextStyle(
+                                  color: _stopStatusColor(s),
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (s.priority == 'AA') ...[
+                          const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
@@ -2161,6 +2692,7 @@ class _TechnicianTile extends StatelessWidget {
                               ),
                             ),
                           ),
+                        ],
                       ],
                     ),
                   ),
@@ -2347,8 +2879,8 @@ class _SortControls extends StatelessWidget {
 }
 
 class MonthlyReportView extends StatefulWidget {
-  final DateTime activeDate;   // operating-clock day; nothing past it is shown
-  final bool fullSchedule;     // true = ignore the clamp, show the whole plan
+  final DateTime activeDate;   // operating-clock day; top report is clamped here
+  final bool fullSchedule;     // true = whole generated plan for selected month
   const MonthlyReportView({super.key, required this.activeDate, this.fullSchedule = false});
 
   @override
@@ -2387,11 +2919,8 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
       final months = await _api.fetchReportMonths(
           asOf: widget.fullSchedule ? kFullAsOf : '');
       if (widget.fullSchedule) {
-        // full plan: show every month the schedule covers, no future-hide
         _months = months;
       } else {
-        // Hide any month after the operating-clock month — the frontend must not
-        // reveal the future. (The console can still query later months directly.)
         final ad = widget.activeDate;
         _months = months.where((m) {
           final y = (m['year'] as num).toInt();
@@ -2400,7 +2929,7 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
         }).toList();
       }
       if (_months.isNotEmpty) {
-        _selectedMonth = _months.last; // operating month (latest visible)
+        _selectedMonth = _months.last;
         await _loadReport();
       } else {
         setState(() => _loading = false);
@@ -2431,6 +2960,7 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
       final r = await http.get(
         Uri.parse(_api.exportUrl(
             _selectedMonth!['year'], _selectedMonth!['month'],
+            asOf: widget.fullSchedule ? kFullAsOf : '',
             sort: _sort, order: _order, search: _search)),
         headers: {'Authorization': 'Token $kSupervisorToken'},
       );
@@ -2443,8 +2973,9 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
       final label = (_selectedMonth!['label'] ?? 'report')
           .toString()
           .replaceAll(' ', '_');
+      final prefix = widget.fullSchedule ? 'full_report' : 'roll_report';
       html.AnchorElement(href: url)
-        ..setAttribute('download', 'report_$label.xlsx')
+        ..setAttribute('download', '${prefix}_$label.xlsx')
         ..click();
       html.Url.revokeObjectUrl(url);
     } catch (e) {
@@ -2457,6 +2988,152 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     }
   }
 
+  double _toDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse('$v') ?? 0.0;
+  }
+
+  int _toInt(dynamic v) {
+    if (v is num) return v.toInt();
+    return int.tryParse('$v') ?? 0;
+  }
+
+  String _fmt1(dynamic v) => _toDouble(v).toStringAsFixed(1);
+  String _fmt0(dynamic v) => _toDouble(v).round().toString();
+
+  Map<String, dynamic> _computedSummary(List techs) {
+    final apiSummary = _report?['summary'];
+    if (apiSummary is Map) return Map<String, dynamic>.from(apiSummary);
+
+    final unitCodes = <String>{};
+    final dates = <String>{};
+    var jobs = 0;
+    var hours = 0.0;
+    var travelMin = 0.0;
+    var routeKm = 0.0;
+    var techDays = 0;
+    var slaMet = 0;
+    var slaTotal = 0;
+    var aa = 0;
+    var b = 0;
+
+    for (final tRaw in techs) {
+      final t = Map<String, dynamic>.from(tRaw as Map);
+      hours += _toDouble(t['total_hours']);
+      routeKm += _toDouble(t['route_km']);
+      travelMin += _toDouble(t['travel_minutes']);
+      techDays += _toInt(t['days_worked']);
+      slaMet += _toInt(t['sla_met']);
+      slaTotal += _toInt(t['sla_total']);
+      aa += _toInt(t['aa_count']);
+      b += _toInt(t['b_count']);
+      final days = ((t['days'] as List?) ?? []);
+      for (final dRaw in days) {
+        final d = Map<String, dynamic>.from(dRaw as Map);
+        dates.add('${d['date']}');
+        final visits = ((d['visits'] as List?) ?? []);
+        jobs += visits.length;
+        for (final vRaw in visits) {
+          final v = Map<String, dynamic>.from(vRaw as Map);
+          final code = v['unit_code'];
+          if (code != null) unitCodes.add('$code');
+        }
+      }
+    }
+    final avgDay = techDays == 0 ? 0.0 : hours / techDays;
+    return {
+      'technician_count': techs.length,
+      'jobs': jobs,
+      'units': unitCodes.length,
+      'hours': double.parse(hours.toStringAsFixed(1)),
+      'avg_day_hours': double.parse(avgDay.toStringAsFixed(1)),
+      'utilization_pct': double.parse(((avgDay / 8.0) * 100).toStringAsFixed(1)),
+      'route_km': double.parse(routeKm.toStringAsFixed(1)),
+      'travel_hours': double.parse((travelMin / 60).toStringAsFixed(1)),
+      'sla_met': slaMet,
+      'sla_total': slaTotal,
+      'aa_count': aa,
+      'b_count': b,
+      'scheduled_days': dates.length,
+    };
+  }
+
+  String _scopeText() {
+    final monthLabel = _selectedMonth?['label']?.toString() ?? '';
+    if (widget.fullSchedule) {
+      return 'Full generated schedule for $monthLabel. This ignores the roll-date clamp and is used for final / all-period reporting.';
+    }
+    final d = DateFormat('yyyy-MM-dd').format(widget.activeDate);
+    return 'Roll-date report for $monthLabel. Shows generated work from the selected month start up to $d only.';
+  }
+
+  String _titleText() => widget.fullSchedule ? 'Full Schedule Report' : 'Roll-Date Report';
+
+  String _jobsHeader(Map<String, dynamic> summary) {
+    final slaTotal = _toInt(summary['sla_total']);
+    return slaTotal > 0 ? 'Callbacks' : 'Jobs';
+  }
+
+  Color _utilColor(double pct) {
+    if (pct < 60) return Colors.red.shade600;
+    if (pct < 80) return Colors.orange.shade700;
+    if (pct <= 105) return Colors.green.shade700;
+    return Colors.deepOrange.shade700;
+  }
+
+  Widget _metricCard({
+    required String label,
+    required String value,
+    IconData icon = Icons.analytics_outlined,
+    Color? color,
+    String? subtitle,
+  }) {
+    final c = color ?? Colors.blue.shade800;
+    return Expanded(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 82),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.withOpacity(0.18)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: c.withOpacity(0.14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: c, size: 19),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.grey.shade700, fontSize: 11)),
+                  const SizedBox(height: 2),
+                  Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 10)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _DashboardCard(
@@ -2467,8 +3144,22 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
             children: [
               Icon(Icons.assessment, color: Colors.blue.shade800),
               const SizedBox(width: 8),
-              const Text('Monthly Report',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(_titleText(),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: widget.fullSchedule ? Colors.indigo.shade50 : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(widget.fullSchedule ? 'FULL PLAN' : 'TO ROLL DATE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: widget.fullSchedule ? Colors.indigo.shade700 : Colors.green.shade700,
+                    )),
+              ),
               const SizedBox(width: 16),
               SizedBox(
                 width: 200,
@@ -2488,8 +3179,11 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
                 options: const {
                   'name': 'Name',
                   'hours': 'Hours',
-                  'buildings': 'Buildings',
+                  'jobs': 'Jobs',
                   'days': 'Days',
+                  'utilization': 'Utilization',
+                  'route_km': 'Route KM',
+                  'sla': 'SLA',
                 },
                 sort: _sort,
                 order: _order,
@@ -2530,7 +3224,9 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
+          Text(_scopeText(), style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+          const SizedBox(height: 12),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -2547,44 +3243,128 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     }
     if (_months.isEmpty) {
       return const Center(
-        child: Text('No schedule data yet. Run a month of solves first.',
+        child: Text('No schedule data yet. Run a schedule generation first.',
             style: TextStyle(color: Colors.grey)),
       );
     }
     final techs = ((_report?['technicians'] as List?) ?? []);
     if (techs.isEmpty) {
       return const Center(
-        child: Text('No maintenance activity for this month.',
+        child: Text('No activity for this report scope.',
             style: TextStyle(color: Colors.grey)),
       );
     }
+    final summary = _computedSummary(techs);
+    final util = _toDouble(summary['utilization_pct']);
+    final hasSla = _toInt(summary['sla_total']) > 0;
     return ListView(
       children: [
-        // summary header row
+        Row(
+          children: [
+            _metricCard(label: 'Technicians', value: '${summary['technician_count']}',
+                icon: Icons.engineering_outlined, subtitle: 'with scheduled work'),
+            const SizedBox(width: 10),
+            _metricCard(label: _jobsHeader(summary), value: '${summary['jobs']}',
+                icon: hasSla ? Icons.report_problem_outlined : Icons.apartment_outlined,
+                subtitle: hasSla ? 'AA ${summary['aa_count']} · B ${summary['b_count']}' : '${summary['units']} unique units'),
+            const SizedBox(width: 10),
+            _metricCard(label: 'Hours', value: '${_fmt1(summary['hours'])} h',
+                icon: Icons.timer_outlined, subtitle: '${summary['scheduled_days']} scheduled days'),
+            const SizedBox(width: 10),
+            _metricCard(label: 'Avg / Day', value: '${_fmt1(summary['avg_day_hours'])} h',
+                icon: Icons.today_outlined, subtitle: 'per worked tech-day'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _metricCard(label: 'Utilization', value: '${_fmt1(util)}%',
+                icon: Icons.speed_outlined, color: _utilColor(util),
+                subtitle: '8h/day target base'),
+            const SizedBox(width: 10),
+            _metricCard(label: 'Route KM', value: '${_fmt1(summary['route_km'])} km',
+                icon: Icons.route_outlined, subtitle: 'cached/google route data'),
+            const SizedBox(width: 10),
+            _metricCard(label: 'Travel Time', value: '${_fmt1(summary['travel_hours'])} h',
+                icon: Icons.directions_car_outlined, subtitle: 'between scheduled stops'),
+            const SizedBox(width: 10),
+            _metricCard(
+              label: hasSla ? 'SLA Success' : 'Balance Signal',
+              value: hasSla
+                  ? '${_fmt1((_toInt(summary['sla_total']) == 0 ? 0 : (_toInt(summary['sla_met']) / _toInt(summary['sla_total']) * 100)))}%'
+                  : (util < 60 ? 'Underused' : util > 105 ? 'Overloaded' : 'Balanced'),
+              icon: hasSla ? Icons.verified_outlined : Icons.balance_outlined,
+              color: hasSla
+                  ? ((_toInt(summary['sla_total']) == 0 || (_toInt(summary['sla_met']) / _toInt(summary['sla_total']) >= 0.9))
+                      ? Colors.green.shade700 : Colors.red.shade600)
+                  : _utilColor(util),
+              subtitle: hasSla ? '${summary['sla_met']}/${summary['sla_total']} inside window' : 'based on avg/day',
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           color: Colors.grey.shade100,
           child: Row(
-            children: const [
-              Expanded(flex: 3, child: Text('Technician',
+            children: [
+              const Expanded(flex: 3, child: Text('Technician',
                   style: TextStyle(fontWeight: FontWeight.bold))),
-              Expanded(child: Text('Days',
+              const Expanded(child: Text('Days',
                   style: TextStyle(fontWeight: FontWeight.bold))),
-              Expanded(child: Text('Buildings',
+              Expanded(child: Text(_jobsHeader(summary),
+                  style: const TextStyle(fontWeight: FontWeight.bold))),
+              const Expanded(child: Text('Hours',
                   style: TextStyle(fontWeight: FontWeight.bold))),
-              Expanded(child: Text('Hours',
+              const Expanded(child: Text('Avg/Day',
                   style: TextStyle(fontWeight: FontWeight.bold))),
-              SizedBox(width: 24),
+              const Expanded(child: Text('Route KM',
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+              const Expanded(child: Text('Util.',
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+              if (hasSla)
+                const Expanded(child: Text('SLA',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+              const SizedBox(width: 24),
             ],
           ),
         ),
-        for (final t in techs) _techRow(Map<String, dynamic>.from(t as Map)),
+        for (final t in techs) _techRow(Map<String, dynamic>.from(t as Map), hasSla),
       ],
     );
   }
 
-  Widget _techRow(Map<String, dynamic> t) {
+  Widget _utilPill(double pct) {
+    final c = _utilColor(pct);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: c.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.withOpacity(0.25)),
+        ),
+        child: Text('${pct.toStringAsFixed(0)}%',
+            style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _techRow(Map<String, dynamic> t, bool hasSla) {
     final expanded = _expandedTechId == t['id'];
+    final days = _toInt(t['days_worked']);
+    final hours = _toDouble(t['total_hours']);
+    final avgDay = _toDouble(t['avg_day_hours'] ?? (days == 0 ? 0 : hours / days));
+    final util = _toDouble(t['utilization_pct'] ?? ((avgDay / 8.0) * 100));
+    final role = (t['role'] ?? t['tech_role'] ?? '').toString();
+    final spec = (t['specialty'] ?? '').toString();
+    final jobs = t['jobs'] ?? t['buildings_visited'];
+    final routeKm = _toDouble(t['route_km']);
+    final slaTotal = _toInt(t['sla_total']);
+    final slaMet = _toInt(t['sla_met']);
+    final slaPct = slaTotal == 0 ? 0.0 : (slaMet / slaTotal * 100);
+
     return Column(
       children: [
         InkWell(
@@ -2594,11 +3374,24 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             child: Row(
               children: [
-                Expanded(flex: 3, child: Text(t['name'].toString(),
-                    style: const TextStyle(fontWeight: FontWeight.w600))),
-                Expanded(child: Text('${t['days_worked']}')),
-                Expanded(child: Text('${t['buildings_visited']}')),
-                Expanded(child: Text('${t['total_hours']} h')),
+                Expanded(flex: 3, child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t['name'].toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (role.isNotEmpty || spec.isNotEmpty)
+                      Text([role, spec].where((x) => x.isNotEmpty).join(' · '),
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+                  ],
+                )),
+                Expanded(child: Text('$days')),
+                Expanded(child: Text('$jobs')),
+                Expanded(child: Text('${hours.toStringAsFixed(1)} h')),
+                Expanded(child: Text('${avgDay.toStringAsFixed(1)} h')),
+                Expanded(child: Text(routeKm == 0 ? '—' : '${routeKm.toStringAsFixed(1)}')),
+                Expanded(child: _utilPill(util)),
+                if (hasSla)
+                  Expanded(child: Text(slaTotal == 0 ? '—' : '${slaPct.toStringAsFixed(0)}%')),
                 Icon(expanded ? Icons.expand_less : Icons.expand_more,
                     size: 20, color: Colors.grey),
               ],
@@ -2619,6 +3412,9 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text('Scheduled work detail. This report does not mark DONE / ON ROUTE; live status belongs to Live Map and Monthly Log after execution.',
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+          const SizedBox(height: 8),
           for (final dRaw in days)
             _dayBlock(Map<String, dynamic>.from(dRaw as Map)),
         ],
@@ -2628,6 +3424,8 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
 
   Widget _dayBlock(Map<String, dynamic> day) {
     final visits = ((day['visits'] as List?) ?? []);
+    final routeKm = _toDouble(day['route_km']);
+    final travelMin = _toDouble(day['travel_minutes']);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -2638,8 +3436,10 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
               Text(day['date'].toString(),
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(width: 10),
-              Text('${day['buildings']} buildings · '
-                  '${(day['work_minutes'] / 60).toStringAsFixed(1)} h · '
+              Text('${day['buildings']} jobs · '
+                  '${(_toDouble(day['work_minutes']) / 60).toStringAsFixed(1)} h service · '
+                  '${(travelMin / 60).toStringAsFixed(1)} h travel · '
+                  '${routeKm.toStringAsFixed(1)} km · '
                   'window ${day['window']}',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
             ],
@@ -2653,6 +3453,13 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
   }
 
   Widget _visitRow(Map<String, dynamic> v) {
+    final op = (v['operation_type'] ?? '').toString();
+    final priority = (v['priority'] ?? '').toString();
+    final label = priority.isNotEmpty
+        ? priority
+        : ((v['maintenance_type'] ?? op).toString().isNotEmpty
+            ? (v['maintenance_type'] ?? op).toString()
+            : '?');
     return Padding(
       padding: const EdgeInsets.only(left: 12, top: 2),
       child: Row(
@@ -2660,17 +3467,16 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
           SizedBox(
             width: 110,
             child: Text('${v['start']}–${v['end'] ?? '—'}',
-                style: const TextStyle(
-                    fontFeatures: [], fontSize: 12, color: Colors.black87)),
+                style: const TextStyle(fontSize: 12, color: Colors.black87)),
           ),
           Container(
             margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
             decoration: BoxDecoration(
-              color: _typeColor(v['maintenance_type']),
+              color: priority.isNotEmpty ? _priorityColor(priority) : _typeColor(v['maintenance_type']),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text('${v['maintenance_type'] ?? '?'}',
+            child: Text(label,
                 style: const TextStyle(
                     color: Colors.white, fontSize: 10,
                     fontWeight: FontWeight.bold)),
@@ -2682,9 +3488,22 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
           ),
           Text('${v['minutes']}m',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+          const SizedBox(width: 8),
+          Text('${_fmt1(v['route_km'])} km',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
         ],
       ),
     );
+  }
+
+  Color _priorityColor(String p) {
+    switch (p) {
+      case 'AA': return Colors.red.shade700;
+      case 'A': return Colors.deepOrange.shade600;
+      case 'B': return Colors.orange.shade700;
+      case 'C': return Colors.blueGrey.shade600;
+      default: return Colors.grey;
+    }
   }
 
   Color _typeColor(dynamic t) {
@@ -2697,8 +3516,9 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
   }
 }
 
+
 // =============================================================================
-//  Unit History view — per-unit maintenance + callback history (group-scoped)
+//  Unit History view — risk-aware unit health + backlog history
 // =============================================================================
 
 class UnitHistoryView extends StatefulWidget {
@@ -2718,13 +3538,15 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
   String? _error;
   int _page = 1;
   String _search = '';
-  String _sort = 'last_service';
-  String _order = 'desc';
+  String _sort = 'status';
+  String _order = 'asc';
+  String _status = 'all';
 
-  // detail panel
   int? _openUnitId;
   Map<String, dynamic>? _detail;
   bool _detailLoading = false;
+
+  String get _asOf => widget.fullSchedule ? kFullAsOf : '';
 
   @override
   void initState() {
@@ -2742,9 +3564,14 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     setState(() { _loading = true; _error = null; });
     try {
       final s = await _api.fetchUnitHistorySummary(
-          search: _search, page: _page, pageSize: 50,
-          asOf: widget.fullSchedule ? kFullAsOf : '',
-          sort: _sort, order: _order);
+        search: _search,
+        page: _page,
+        pageSize: 50,
+        asOf: _asOf,
+        sort: _sort,
+        order: _order,
+        status: _status,
+      );
       setState(() { _summary = s; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -2758,8 +3585,7 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     }
     setState(() { _openUnitId = unitId; _detailLoading = true; _detail = null; });
     try {
-      final d = await _api.fetchUnitHistoryDetail(unitId,
-          asOf: widget.fullSchedule ? kFullAsOf : '');
+      final d = await _api.fetchUnitHistoryDetail(unitId, asOf: _asOf);
       setState(() { _detail = d; _detailLoading = false; });
     } catch (e) {
       setState(() { _detailLoading = false; });
@@ -2774,7 +3600,13 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     setState(() => _exporting = true);
     try {
       final r = await http.get(
-        Uri.parse(_api.unitHistoryExportUrl()),
+        Uri.parse(_api.unitHistoryExportUrl(
+          asOf: _asOf,
+          sort: _sort,
+          order: _order,
+          search: _search,
+          status: _status,
+        )),
         headers: {'Authorization': 'Token $kSupervisorToken'},
       );
       if (r.statusCode != 200) throw Exception('Export failed: ${r.statusCode}');
@@ -2782,7 +3614,7 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       final url = html.Url.createObjectUrlFromBlob(blob);
       html.AnchorElement(href: url)
-        ..setAttribute('download', 'unit_history.xlsx')
+        ..setAttribute('download', 'unit_history_enhanced.xlsx')
         ..click();
       html.Url.revokeObjectUrl(url);
     } catch (e) {
@@ -2795,90 +3627,179 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     }
   }
 
+  bool get _isCallback => (_summary?['group_type'] ?? '') == 'CALLBACK';
+  Map<String, dynamic> get _metrics =>
+      Map<String, dynamic>.from((_summary?['summary'] as Map?) ?? const {});
+
+  String _n(dynamic v) => v == null ? '0' : '$v';
+  String _pct(dynamic v) => v == null ? 'N/A' : '${v}%';
+
   @override
   Widget build(BuildContext context) {
     final units = ((_summary?['units'] as List?) ?? []);
     final total = _summary?['total_units'] ?? 0;
     final gtype = _summary?['group_type'] ?? '';
+    final scope = _summary?['as_of'] ?? (widget.fullSchedule ? 'all' : 'roll date');
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(Icons.apartment, color: Colors.blue.shade800),
-              const SizedBox(width: 8),
-              const Text('Unit History',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(width: 10),
-              if (gtype.toString().isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text('$gtype HQ',
-                      style: TextStyle(color: Colors.blue.shade800, fontSize: 11)),
-                ),
-              const Spacer(),
-              SizedBox(
-                width: 220,
-                child: TextField(
-                  controller: _searchCtrl,
-                  decoration: const InputDecoration(
-                    hintText: 'Search unit name/code…',
-                    isDense: true,
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (v) {
-                    _search = v.trim();
-                    _page = 1;
-                    _load();
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              _SortControls(
-                options: const {
-                  'last_service': 'Last Service',
-                  'name': 'Name',
-                  'maint': 'Maintenance',
-                  'callback': 'Callbacks',
-                },
-                sort: _sort,
-                order: _order,
-                onSort: (v) {
-                  setState(() {
-                    _sort = v;
-                    _order = v == 'name' ? 'asc' : 'desc';
-                    _page = 1;
-                  });
-                  _load();
-                },
-                onOrder: (v) { setState(() => _order = v); _load(); },
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: _exporting ? null : _export,
-                icon: _exporting
-                    ? const SizedBox(height: 16, width: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.download, size: 18),
-                label: const Text('Export Excel'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text('$total units in your scope',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          _header(gtype, scope),
+          const SizedBox(height: 12),
+          if (!_loading && _error == null) _summaryCards(),
+          const SizedBox(height: 12),
+          if (!_loading && _error == null) _filterRow(),
           const SizedBox(height: 12),
           Expanded(child: _buildBody(units)),
           if (!_loading && _error == null) _pager(total),
         ],
       ),
+    );
+  }
+
+  Widget _header(dynamic gtype, dynamic scope) {
+    return Row(
+      children: [
+        Icon(Icons.apartment, color: Colors.blue.shade800),
+        const SizedBox(width: 8),
+        Text(widget.fullSchedule ? 'Full · Unit History' : 'Unit History',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(width: 10),
+        _softBadge('$gtype', Colors.blue),
+        const SizedBox(width: 8),
+        _softBadge(widget.fullSchedule ? 'Full generated schedule' : 'Roll-date scope: $scope', Colors.indigo),
+        const Spacer(),
+        SizedBox(
+          width: 240,
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: const InputDecoration(
+              hintText: 'Search unit name/code…',
+              isDense: true,
+              prefixIcon: Icon(Icons.search, size: 18),
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (v) {
+              _search = v.trim();
+              _page = 1;
+              _load();
+            },
+          ),
+        ),
+        const SizedBox(width: 12),
+        _SortControls(
+          options: const {
+            'status': 'Risk',
+            'last_service': 'Last Service',
+            'next_service': 'Next Service',
+            'name': 'Name',
+            'maint': 'Maintenance',
+            'callback': 'Callbacks',
+            'unassigned': 'Backlog',
+            'sla': 'SLA',
+          },
+          sort: _sort,
+          order: _order,
+          onSort: (v) {
+            setState(() {
+              _sort = v;
+              _order = v == 'name' ? 'asc' : 'desc';
+              if (v == 'status') _order = 'asc';
+              _page = 1;
+            });
+            _load();
+          },
+          onOrder: (v) { setState(() => _order = v); _load(); },
+        ),
+        const SizedBox(width: 12),
+        FilledButton.icon(
+          onPressed: _exporting ? null : _export,
+          icon: _exporting
+              ? const SizedBox(height: 16, width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.download, size: 18),
+          label: const Text('Export Excel'),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryCards() {
+    final m = _metrics;
+    final cards = _isCallback
+        ? [
+            ['Units', _n(m['units']), Icons.apartment, Colors.blue],
+            ['Callback incidents', _n((m['aa_count'] ?? 0) + (m['b_count'] ?? 0)), Icons.report_problem, Colors.purple],
+            ['AA / B', '${_n(m['aa_count'])} / ${_n(m['b_count'])}', Icons.priority_high, Colors.red],
+            ['Repeat callback units', _n(m['repeat_callback_units']), Icons.repeat, Colors.orange],
+            ['Unassigned callbacks', _n(m['unassigned']), Icons.assignment_late, Colors.red],
+            ['AA backlog', _n(m['aa_unassigned']), Icons.warning_amber, Colors.red],
+          ]
+        : [
+            ['Units', _n(m['units']), Icons.apartment, Colors.blue],
+            ['Serviced units', _n(m['serviced_units']), Icons.check_circle, Colors.green],
+            ['Due soon', _n(m['due_soon']), Icons.schedule, Colors.orange],
+            ['Overdue', _n(m['overdue']), Icons.error_outline, Colors.red],
+            ['Maintenance backlog', _n(m['unassigned']), Icons.assignment_late, Colors.red],
+            ['Risk units', '${(m['due_soon'] ?? 0) + (m['overdue'] ?? 0) + (m['unassigned'] ?? 0)}', Icons.analytics, Colors.indigo],
+          ];
+    return LayoutBuilder(builder: (context, c) {
+      final width = (c.maxWidth - 50) / 6;
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final card in cards)
+            SizedBox(
+              width: width < 150 ? 150 : width,
+              child: _unitMetricCard(
+                label: card[0] as String,
+                value: card[1] as String,
+                icon: card[2] as IconData,
+                color: card[3] as Color,
+              ),
+            ),
+        ],
+      );
+    });
+  }
+
+  Widget _filterRow() {
+    final filters = _isCallback
+        ? const {
+            'all': 'All',
+            'risk': 'Risk only',
+            'unassigned': 'Backlog',
+            'sla_risk': 'SLA risk',
+            'callback_risk': 'Repeat callback',
+            'healthy': 'Healthy',
+          }
+        : const {
+            'all': 'All',
+            'risk': 'Risk only',
+            'unassigned': 'Backlog',
+            'overdue': 'Overdue',
+            'due_soon': 'Due soon',
+            'healthy': 'Healthy',
+          };
+    return Row(
+      children: [
+        Text('${_summary?['total_units'] ?? 0} units in scope',
+            style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        const Spacer(),
+        for (final e in filters.entries)
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: ChoiceChip(
+              label: Text(e.value),
+              selected: _status == e.key,
+              onSelected: (_) {
+                setState(() { _status = e.key; _page = 1; });
+                _load();
+              },
+            ),
+          ),
+      ],
     );
   }
 
@@ -2890,29 +3811,31 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
     }
     if (units.isEmpty) {
       return const Center(
-        child: Text('No unit history found. Run solve_month / solve_callbacks_year.',
-            style: TextStyle(color: Colors.grey)));
+        child: Text('No unit history found for this filter.',
+            style: TextStyle(color: Colors.grey)),
+      );
     }
     return ListView(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          color: Colors.grey.shade100,
-          child: Row(children: const [
-            Expanded(flex: 4, child: Text('Unit',
-                style: TextStyle(fontWeight: FontWeight.bold))),
-            Expanded(flex: 2, child: Text('Maintenance',
-                style: TextStyle(fontWeight: FontWeight.bold))),
-            Expanded(flex: 2, child: Text('Callbacks',
-                style: TextStyle(fontWeight: FontWeight.bold))),
-            Expanded(flex: 2, child: Text('Last service',
-                style: TextStyle(fontWeight: FontWeight.bold))),
-            SizedBox(width: 24),
-          ]),
-        ),
-        for (final uRaw in units)
-          _unitRow(Map<String, dynamic>.from(uRaw as Map)),
+        _tableHeader(),
+        for (final uRaw in units) _unitRow(Map<String, dynamic>.from(uRaw as Map)),
       ],
+    );
+  }
+
+  Widget _tableHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      color: Colors.grey.shade100,
+      child: Row(children: [
+        const Expanded(flex: 4, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold))),
+        Expanded(flex: 2, child: Text(_isCallback ? 'Callbacks' : 'Maintenance', style: const TextStyle(fontWeight: FontWeight.bold))),
+        Expanded(flex: 2, child: Text(_isCallback ? 'AA / B' : 'Last service', style: const TextStyle(fontWeight: FontWeight.bold))),
+        Expanded(flex: 2, child: Text(_isCallback ? 'SLA / Repeat' : 'Next service', style: const TextStyle(fontWeight: FontWeight.bold))),
+        const Expanded(flex: 2, child: Text('Backlog', style: TextStyle(fontWeight: FontWeight.bold))),
+        const Expanded(flex: 2, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+        const SizedBox(width: 24),
+      ]),
     );
   }
 
@@ -2931,21 +3854,22 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('${u['name']}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis),
-                    Text('${u['code']}',
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade600)),
+                    Text('${u['name']}', style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    Wrap(spacing: 6, runSpacing: 4, children: [
+                      Text('${u['code']}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                      if ((u['district'] ?? '').toString().isNotEmpty)
+                        Text('· ${u['district']}', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    ]),
                   ],
                 ),
               ),
-              Expanded(flex: 2, child: Text('${u['maint']}')),
-              Expanded(flex: 2, child: Text('${u['callback']}')),
-              Expanded(flex: 2, child: Text('${u['last'] ?? '—'}',
-                  style: const TextStyle(fontSize: 12))),
-              Icon(open ? Icons.expand_less : Icons.expand_more,
-                  size: 20, color: Colors.grey),
+              Expanded(flex: 2, child: Text(_isCallback ? '${u['callback']}' : '${u['maint']}')),
+              Expanded(flex: 2, child: Text(_isCallback ? '${u['aa_count']} / ${u['b_count']}' : '${u['last'] ?? '—'}', style: const TextStyle(fontSize: 12))),
+              Expanded(flex: 2, child: Text(_isCallback ? '${_pct(u['sla_pct'])} · ${u['repeat_callbacks']}x' : '${u['next_service'] ?? '—'}', style: const TextStyle(fontSize: 12))),
+              Expanded(flex: 2, child: _backlogBadge(u)),
+              Expanded(flex: 2, child: _statusBadge('${u['status']}', '${u['status_label']}')),
+              Icon(open ? Icons.expand_less : Icons.expand_more, size: 20, color: Colors.grey),
             ]),
           ),
         ),
@@ -2953,6 +3877,15 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
         const Divider(height: 1),
       ],
     );
+  }
+
+  Widget _backlogBadge(Map<String, dynamic> u) {
+    final count = (u['unassigned_count'] ?? 0) as int;
+    if (count <= 0) return Text('0', style: TextStyle(color: Colors.grey.shade600));
+    final aa = u['aa_unassigned'] ?? 0;
+    final b = u['b_unassigned'] ?? 0;
+    final label = _isCallback ? '$count · AA $aa / B $b' : '$count';
+    return _softBadge(label, aa > 0 ? Colors.red : Colors.orange);
   }
 
   Widget _detailPanel() {
@@ -2964,32 +3897,70 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
       );
     }
     final visits = ((_detail?['visits'] as List?) ?? []);
-    if (visits.isEmpty) {
+    final unassigned = ((_detail?['unassigned'] as List?) ?? []);
+    if (visits.isEmpty && unassigned.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child: Text('No visits recorded.', style: TextStyle(color: Colors.grey)),
+        child: Text('No visits or backlog recorded.', style: TextStyle(color: Colors.grey)),
       );
     }
     return Container(
       color: Colors.blue.shade50.withOpacity(0.3),
-      padding: const EdgeInsets.fromLTRB(24, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(24, 10, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final vRaw in visits)
-            _visitRow(Map<String, dynamic>.from(vRaw as Map)),
+          if (unassigned.isNotEmpty) ...[
+            Row(children: [
+              Icon(Icons.assignment_late, color: Colors.red.shade700, size: 18),
+              const SizedBox(width: 6),
+              Text(_isCallback ? 'Unassigned callback backlog' : 'Unassigned maintenance backlog',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 6),
+            for (final tRaw in unassigned) _unassignedRow(Map<String, dynamic>.from(tRaw as Map)),
+            const Divider(height: 18),
+          ],
+          if (visits.isNotEmpty) ...[
+            Row(children: [
+              Icon(_isCallback ? Icons.history_toggle_off : Icons.build_circle_outlined, color: Colors.blue.shade800, size: 18),
+              const SizedBox(width: 6),
+              Text(_isCallback ? 'Callback incident history' : 'Maintenance visit history',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 6),
+            for (final vRaw in visits) _visitRow(Map<String, dynamic>.from(vRaw as Map)),
+          ],
         ],
       ),
     );
   }
 
-  Widget _visitRow(Map<String, dynamic> v) {
-    final isCallback = v['kind'] == 'Callback';
+  Widget _unassignedRow(Map<String, dynamic> t) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(children: [
-        SizedBox(width: 90, child: Text('${v['date']}',
-            style: const TextStyle(fontSize: 12))),
+        SizedBox(width: 120, child: Text('${t['task_no']}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+        Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(color: Colors.red.shade600, borderRadius: BorderRadius.circular(4)),
+          child: Text('${t['type']}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+        ),
+        SizedBox(width: 130, child: Text('${t['release_time'] ?? '—'}', style: const TextStyle(fontSize: 12))),
+        Expanded(child: Text('${t['reason']}', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
+        Text('${t['duration_min']}m', style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+      ]),
+    );
+  }
+
+  Widget _visitRow(Map<String, dynamic> v) {
+    final isCallback = v['kind'] == 'Callback';
+    final sla = v['sla_met'];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        SizedBox(width: 90, child: Text('${v['date']}', style: const TextStyle(fontSize: 12))),
         Container(
           margin: const EdgeInsets.only(right: 8),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -2998,16 +3969,66 @@ class _UnitHistoryViewState extends State<UnitHistoryView> {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(isCallback ? 'CB ${v['type']}' : '${v['type']}',
-              style: const TextStyle(color: Colors.white, fontSize: 10,
-                  fontWeight: FontWeight.bold)),
+              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
         ),
-        SizedBox(width: 110, child: Text('${v['start']}–${v['end'] ?? '—'}',
-            style: const TextStyle(fontSize: 12))),
-        Expanded(child: Text('${v['technician'] ?? ''}',
-            style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
-        Text('${v['duration_min']}m',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+        SizedBox(width: 110, child: Text('${v['start']}–${v['end'] ?? '—'}', style: const TextStyle(fontSize: 12))),
+        Expanded(child: Text('${v['technician'] ?? ''}', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
+        if (isCallback) SizedBox(width: 85, child: Text('Resp ${v['response_min'] ?? '—'}m', style: const TextStyle(fontSize: 11))),
+        if (isCallback) SizedBox(width: 70, child: _softBadge(sla == true ? 'SLA YES' : (sla == false ? 'SLA NO' : 'SLA N/A'), sla == true ? Colors.green : (sla == false ? Colors.red : Colors.grey))),
+        SizedBox(width: 75, child: Text('${v['travel_min'] ?? 0} travel', style: TextStyle(color: Colors.grey.shade600, fontSize: 11))),
+        SizedBox(width: 75, child: Text('${v['route_km'] ?? 0} km', style: TextStyle(color: Colors.grey.shade600, fontSize: 11))),
+        Text('${v['duration_min']}m', style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
       ]),
+    );
+  }
+
+  Widget _unitMetricCard({required String label, required String value, required IconData icon, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        border: Border.all(color: color.withOpacity(0.22)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        Container(
+          height: 34, width: 34,
+          decoration: BoxDecoration(color: color.withOpacity(0.14), shape: BoxShape.circle),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 3),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ])),
+      ]),
+    );
+  }
+
+  Widget _statusBadge(String status, String label) {
+    Color c;
+    switch (status) {
+      case 'critical': c = Colors.red.shade800; break;
+      case 'unassigned': c = Colors.red.shade600; break;
+      case 'overdue': c = Colors.deepOrange; break;
+      case 'sla_risk': c = Colors.orange.shade800; break;
+      case 'callback_risk': c = Colors.orange; break;
+      case 'due_soon': c = Colors.amber.shade800; break;
+      default: c = Colors.green.shade700;
+    }
+    return _softBadge(label, c);
+  }
+
+  Widget _softBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis),
     );
   }
 
@@ -3600,8 +4621,10 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
   final TextEditingController _searchCtrl = TextEditingController();
   Map<String, dynamic>? _data;
   bool _loading = true;
+  bool _exporting = false;
   String? _error;
   String _priority = '';
+  String _status = '';
   String _search = '';
   int _page = 1;
 
@@ -3614,7 +4637,7 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
     setState(() { _loading = true; _error = null; });
     try {
       final d = await _api.fetchCallbackOverview(
-          priority: _priority, search: _search, page: _page,
+          priority: _priority, status: _status, search: _search, page: _page,
           asOf: widget.fullSchedule ? kFullAsOf : '');
       setState(() { _data = d; _loading = false; });
     } catch (e) {
@@ -3622,11 +4645,44 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
     }
   }
 
+  Future<void> _export() async {
+    setState(() => _exporting = true);
+    try {
+      final url = _api.callbackOverviewExportUrl(
+        priority: _priority,
+        status: _status,
+        search: _search,
+        asOf: widget.fullSchedule ? kFullAsOf : '',
+      );
+      final r = await http.get(Uri.parse(url), headers: {'Authorization': 'Token $kSupervisorToken'});
+      if (r.statusCode != 200) throw Exception('Export failed: ${r.statusCode}');
+      final blob = html.Blob([r.bodyBytes],
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final href = html.Url.createObjectUrlFromBlob(blob);
+      html.AnchorElement(href: href)
+        ..setAttribute('download', widget.fullSchedule
+            ? 'full_callback_incident_center.xlsx'
+            : 'callback_incident_center.xlsx')
+        ..click();
+      html.Url.revokeObjectUrl(href);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Export error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = ((_data?['tasks'] as List?) ?? []);
     final total = _data?['total'] ?? 0;
-    final breakdown = (_data?['breakdown'] as Map?) ?? {};
+    final summary = Map<String, dynamic>.from((_data?['summary'] as Map?) ?? {});
+    final scopeStart = summary['scope_start'] ?? '';
+    final scopeEnd = summary['scope_end'] ?? '';
+    final title = widget.fullSchedule ? 'Full · Callback Incident Center' : 'Callback Incident Center';
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3634,39 +4690,84 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
           Row(children: [
             Icon(Icons.report_problem, color: Colors.purple.shade700),
             const SizedBox(width: 8),
-            const Text('Repair / Callback Module',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(widget.fullSchedule ? 'whole generated plan' : 'to roll date',
+                  style: TextStyle(color: Colors.purple.shade800, fontSize: 11, fontWeight: FontWeight.w600)),
+            ),
             const Spacer(),
-            for (final p in ['', 'AA', 'A', 'B', 'C', 'D'])
+            FilledButton.icon(
+              onPressed: _exporting ? null : _export,
+              icon: _exporting
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.download, size: 18),
+              label: const Text('Export Excel'),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text('Scope: $scopeStart → $scopeEnd. Incidents, SLA, assigned work, and unassigned callback backlog.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+          const SizedBox(height: 12),
+          _summaryBand(summary),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: const InputDecoration(
+                  hintText: 'Search incident, unit, technician…',
+                  isDense: true, prefixIcon: Icon(Icons.search, size: 18),
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (v) { _search = v.trim(); _page = 1; _load(); },
+              ),
+            ),
+            const SizedBox(width: 10),
+            for (final item in const [
+              ['', 'All'], ['AA', 'AA'], ['B', 'B'],
+            ])
               Padding(
                 padding: const EdgeInsets.only(left: 6),
                 child: ChoiceChip(
-                  label: Text(p.isEmpty ? 'All' : p),
-                  selected: _priority == p,
-                  onSelected: (_) { setState(() { _priority = p; _page = 1; }); _load(); },
+                  label: Text(item[1]),
+                  selected: _priority == item[0],
+                  onSelected: (_) { setState(() { _priority = item[0]; _page = 1; }); _load(); },
                 ),
               ),
           ]),
           const SizedBox(height: 8),
-          if (breakdown.isNotEmpty)
-            Wrap(spacing: 8, children: [
-              for (final e in breakdown.entries)
-                Chip(label: Text('${e.key}: ${e.value}'),
-                    backgroundColor: Colors.purple.shade50,
-                    labelStyle: TextStyle(color: Colors.purple.shade800, fontSize: 12)),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              for (final item in const [
+                ['', 'All incidents'],
+                ['UNASSIGNED', 'Unassigned'],
+                ['SLA_MISSED', 'SLA missed'],
+                ['SLA_MET', 'SLA met'],
+                ['ASSIGNED', 'Assigned'],
+                ['ON_SITE', 'On site'],
+                ['ON_PLAN', 'On plan'],
+                ['DONE', 'Done'],
+              ])
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(item[1]),
+                    selected: _status == item[0],
+                    onSelected: (_) { setState(() { _status = item[0]; _page = 1; }); _load(); },
+                  ),
+                ),
             ]),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _searchCtrl,
-            decoration: const InputDecoration(
-              hintText: 'Search unit or technician…',
-              isDense: true, prefixIcon: Icon(Icons.search, size: 18),
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (v) { _search = v.trim(); _page = 1; _load(); },
           ),
           const SizedBox(height: 8),
-          Text('$total callbacks', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text('$total incident rows shown', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const SizedBox(height: 8),
           Expanded(
             child: _loading
@@ -3674,8 +4775,8 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
                 : _error != null
                     ? Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.red)))
                     : rows.isEmpty
-                        ? const Center(child: Text('No callbacks found.', style: TextStyle(color: Colors.grey)))
-                        : ListView(children: [_taskTable(rows)]),
+                        ? const Center(child: Text('No callback incidents found.', style: TextStyle(color: Colors.grey)))
+                        : ListView(children: [_callbackIncidentTable(rows)]),
           ),
           if (!_loading && _error == null)
             _pagerBar(total, _page, _data?['page_size'] ?? 50,
@@ -3685,9 +4786,138 @@ class _CallbackOverviewTabState extends State<CallbackOverviewTab> {
       ),
     );
   }
+
+  Widget _summaryBand(Map<String, dynamic> s) {
+    final total = s['total'] ?? 0;
+    final aa = s['aa'] ?? 0;
+    final b = s['b'] ?? 0;
+    final unassigned = s['unassigned'] ?? 0;
+    final slaPct = (s['sla_pct'] as num?)?.toDouble() ?? 0;
+    final missed = s['sla_missed'] ?? 0;
+    final avgResp = (s['avg_response_min'] as num?)?.toDouble() ?? 0;
+    return Wrap(
+      spacing: 10, runSpacing: 10,
+      children: [
+        _callbackStat('Incidents', '$total', 'AA $aa · B $b', Icons.warning_amber, Colors.purple),
+        _callbackStat('Unassigned', '$unassigned', unassigned == 0 ? 'no backlog' : 'needs action', Icons.inventory_2_outlined, unassigned == 0 ? Colors.green : Colors.red),
+        _callbackStat('SLA success', '${slaPct.toStringAsFixed(1)}%', '$missed missed', Icons.verified_outlined, slaPct >= 85 ? Colors.green : Colors.red),
+        _callbackStat('Avg response', '${avgResp.toStringAsFixed(0)}m', 'report → arrival', Icons.timer_outlined, Colors.blue),
+      ],
+    );
+  }
+
+  Widget _callbackStat(String label, String value, String sub, IconData icon, MaterialColor c) {
+    return Container(
+      width: 210,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.shade100),
+      ),
+      child: Row(children: [
+        CircleAvatar(backgroundColor: c.shade100, child: Icon(icon, color: c.shade700, size: 20)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(color: Colors.grey.shade700, fontSize: 11)),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(sub, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+        ])),
+      ]),
+    );
+  }
+
+  Widget _callbackIncidentTable(List rows) {
+    return Column(children: [
+      Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        color: Colors.grey.shade100,
+        child: Row(children: const [
+          Expanded(flex: 4, child: Text('Incident / Unit', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 1, child: Text('Priority', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 2, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 3, child: Text('Technician', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 2, child: Text('Reported', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 2, child: Text('Scheduled', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 2, child: Text('Response / SLA', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: 2, child: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+        ]),
+      ),
+      for (final rRaw in rows)
+        Builder(builder: (_) {
+          final r = Map<String, dynamic>.from(rRaw as Map);
+          final unassigned = r['status'] == 'UNASSIGNED';
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+            decoration: BoxDecoration(
+              color: unassigned ? Colors.red.shade50 : null,
+              border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+            ),
+            child: Row(children: [
+              Expanded(flex: 4, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${r['task_no']} · ${r['unit_name']}',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13), overflow: TextOverflow.ellipsis),
+                Text('${r['unit_code']}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                if (unassigned && (r['unassigned_reason'] ?? '').toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text('${r['unassigned_reason']}',
+                        style: TextStyle(fontSize: 11, color: Colors.red.shade700), overflow: TextOverflow.ellipsis),
+                  ),
+              ])),
+              Expanded(flex: 1, child: Align(alignment: Alignment.centerLeft, child: _priorityChip('${r['priority']}'))),
+              Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _statusChip('${r['status_label']}', '${r['status']}'))),
+              Expanded(flex: 3, child: Text('${r['technician'] ?? '—'}', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+              Expanded(flex: 2, child: Text('${r['reported_date'] ?? r['date'] ?? ''}\n${r['reported'] ?? ''}', style: const TextStyle(fontSize: 12))),
+              Expanded(flex: 2, child: Text((r['start'] ?? '').toString().isEmpty ? '—' : '${r['start']}–${r['end']}', style: const TextStyle(fontSize: 12))),
+              Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(r['response_min'] == null ? '—' : 'Resp ${r['response_min']}m', style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 2),
+                _slaChip('${r['sla_label']}', r['sla_met'] == true),
+              ])),
+              Expanded(flex: 2, child: Text('${r['action_hint'] ?? ''}', style: TextStyle(fontSize: 12, color: unassigned ? Colors.red.shade700 : Colors.grey.shade700))),
+            ]),
+          );
+        }),
+    ]);
+  }
+
+  Widget _priorityChip(String p) {
+    final isAA = p == 'AA';
+    final c = isAA ? Colors.red : Colors.purple;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: c.shade500, borderRadius: BorderRadius.circular(5)),
+      child: Text('CB $p', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _statusChip(String label, String status) {
+    MaterialColor c;
+    if (status == 'UNASSIGNED') c = Colors.red;
+    else if (status == 'ON_SITE') c = Colors.blue;
+    else if (status == 'DONE') c = Colors.green;
+    else if (status == 'ON_PLAN') c = Colors.grey;
+    else c = Colors.orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: c.shade50, border: Border.all(color: c.shade200), borderRadius: BorderRadius.circular(20)),
+      child: Text(label, style: TextStyle(color: c.shade800, fontSize: 11, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _slaChip(String label, bool ok) {
+    final c = ok ? Colors.green : Colors.red;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: c.shade50, border: Border.all(color: c.shade200), borderRadius: BorderRadius.circular(12)),
+      child: Text(label, style: TextStyle(color: c.shade700, fontSize: 10, fontWeight: FontWeight.w700)),
+    );
+  }
 }
 
 // ---------------------------------------------------- Monthly Log
+
 class MonthlyLogTab extends StatefulWidget {
   final DateTime activeDate;   // operating-clock day
   final bool fullSchedule;
@@ -3698,12 +4928,15 @@ class MonthlyLogTab extends StatefulWidget {
 
 class _MonthlyLogTabState extends State<MonthlyLogTab> {
   final ApiClient _api = ApiClient();
+  final TextEditingController _search = TextEditingController();
   Map<String, dynamic>? _data;
   bool _loading = true;
   String? _error;
   late int _year;
   late int _month;
   int _page = 1;
+  String _status = '';
+  String _priority = '';
 
   @override
   void initState() {
@@ -3716,18 +4949,59 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final d = await _api.fetchMonthlyLog(_year, _month, page: _page,
-          asOf: widget.fullSchedule ? kFullAsOf : '');
+      var requestPriority = _priority;
+      var d = await _api.fetchMonthlyLog(
+        _year,
+        _month,
+        page: _page,
+        asOf: widget.fullSchedule ? kFullAsOf : '',
+        search: _search.text.trim(),
+        status: _status,
+        priority: requestPriority,
+      );
+
+      // If an old filter from another supervisor/domain is no longer valid
+      // (e.g. C selected while logged into callback), clear it and refetch.
+      final gt = '${d['group_type'] ?? ''}'.toLowerCase();
+      final validCallback = ['', 'AA', 'B'];
+      final validMaintenance = ['', 'A', 'B', 'C'];
+      final invalidForCallback = gt == 'callback' && !validCallback.contains(_priority);
+      final invalidForMaintenance = gt == 'maintenance' && !validMaintenance.contains(_priority);
+      if (invalidForCallback || invalidForMaintenance) {
+        _priority = '';
+        requestPriority = '';
+        d = await _api.fetchMonthlyLog(
+          _year,
+          _month,
+          page: 1,
+          asOf: widget.fullSchedule ? kFullAsOf : '',
+          search: _search.text.trim(),
+          status: _status,
+          priority: requestPriority,
+        );
+        _page = 1;
+      }
+
       setState(() { _data = d; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
+  String get _groupType => '${_data?['group_type'] ?? ''}'.toLowerCase();
+  bool get _isCallback => _groupType == 'callback';
+  bool get _isMaintenance => _groupType == 'maintenance';
+
   @override
   Widget build(BuildContext context) {
     final rows = ((_data?['log'] as List?) ?? []);
     final total = _data?['total'] ?? 0;
+    final summary = Map<String, dynamic>.from((_data?['summary'] as Map?) ?? {});
+    final scope = '${_data?['scope'] ?? (widget.fullSchedule ? 'full' : 'roll-date')}';
+    final scopeStart = '${_data?['scope_start'] ?? ''}';
+    final scopeEnd = '${_data?['scope_end'] ?? ''}';
+    final title = widget.fullSchedule ? 'Full Monthly Work Log' : 'Monthly Tracking & Logs';
+
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3735,18 +5009,32 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
           Row(children: [
             Icon(Icons.calendar_month, color: Colors.teal.shade700),
             const SizedBox(width: 8),
-            const Text('Monthly Tracking & Logs',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10),
+            if (_data != null)
+              _scopeChip(scope == 'full' ? 'FULL SCHEDULE' : 'TO ROLL DATE'),
             const Spacer(),
+            SizedBox(
+              width: 270,
+              child: TextField(
+                controller: _search,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: 'Search unit / tech / task...',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) { _page = 1; _load(); },
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(onPressed: () { _page = 1; _load(); }, icon: const Icon(Icons.refresh)),
+            const SizedBox(width: 8),
             DropdownButton<int>(
               value: _month,
               items: [
                 for (int m = 1;
-                    m <= (widget.fullSchedule
-                        ? 12
-                        : (_year == widget.activeDate.year
-                            ? widget.activeDate.month
-                            : 12));
+                    m <= (widget.fullSchedule ? 12 : (_year == widget.activeDate.year ? widget.activeDate.month : 12));
                     m++)
                   DropdownMenuItem(value: m, child: Text('Month $m'))
               ],
@@ -3756,18 +5044,13 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
             DropdownButton<int>(
               value: _year,
               items: [
-                for (int y = 2025;
-                    y <= widget.activeDate.year + (widget.fullSchedule ? 1 : 0);
-                    y++)
+                for (int y = 2025; y <= widget.activeDate.year + (widget.fullSchedule ? 1 : 0); y++)
                   DropdownMenuItem(value: y, child: Text('$y'))
               ],
               onChanged: (y) {
                 setState(() {
                   _year = y!;
-                  // jumping to the operating year: don't allow a future month
-                  if (!widget.fullSchedule &&
-                      _year == widget.activeDate.year &&
-                      _month > widget.activeDate.month) {
+                  if (!widget.fullSchedule && _year == widget.activeDate.year && _month > widget.activeDate.month) {
                     _month = widget.activeDate.month;
                   }
                   _page = 1;
@@ -3777,9 +5060,18 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
             ),
           ]),
           const SizedBox(height: 8),
-          Text('$total tasks logged this month',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-          const SizedBox(height: 8),
+          if (_data != null)
+            Text(
+              widget.fullSchedule
+                  ? 'Full generated schedule scope for $scopeStart → $scopeEnd.'
+                  : 'Roll-date scope for $scopeStart → $scopeEnd. Live statuses are based on the selected roll date/time.',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
+          const SizedBox(height: 10),
+          if (_data != null) _summaryCards(summary),
+          const SizedBox(height: 10),
+          _filters(),
+          const SizedBox(height: 10),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -3787,7 +5079,7 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
                     ? Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.red)))
                     : rows.isEmpty
                         ? const Center(child: Text('No tasks logged for this month.', style: TextStyle(color: Colors.grey)))
-                        : ListView(children: [_taskTable(rows)]),
+                        : ListView(children: [_enhancedLogTable(rows)]),
           ),
           if (!_loading && _error == null)
             _pagerBar(total, _page, _data?['page_size'] ?? 100,
@@ -3797,39 +5089,289 @@ class _MonthlyLogTabState extends State<MonthlyLogTab> {
       ),
     );
   }
+
+  Widget _summaryCards(Map<String, dynamic> s) {
+    final isCb = _isCallback;
+    final cards = <Widget>[
+      _metricCard(isCb ? 'Callbacks logged' : 'Tasks logged', '${s['total'] ?? _data?['total'] ?? 0}', Icons.list_alt, Colors.blue),
+      _metricCard('Assigned', '${s['assigned'] ?? 0}', Icons.assignment_turned_in_outlined, Colors.green),
+      _metricCard('Unassigned', '${s['unassigned'] ?? 0}', Icons.warning_amber_outlined,
+          (s['unassigned'] ?? 0) > 0 ? Colors.red : Colors.grey),
+      _metricCard('Done / Active', '${s['done'] ?? 0} / ${(s['on_site'] ?? 0) + (s['on_route'] ?? 0)}',
+          Icons.play_circle_outline, Colors.orange),
+    ];
+    if (isCb) {
+      cards.addAll([
+        _metricCard('AA / B', '${s['aa'] ?? 0} / ${s['b'] ?? 0}', Icons.priority_high, Colors.purple),
+        _metricCard('SLA success', s['sla_pct'] == null ? 'N/A' : '${s['sla_pct']}%', Icons.verified_outlined,
+            (s['sla_pct'] ?? 100) >= 80 ? Colors.green : Colors.red),
+        _metricCard('SLA missed', '${s['sla_missed'] ?? 0}', Icons.cancel_outlined,
+            (s['sla_missed'] ?? 0) > 0 ? Colors.red : Colors.grey),
+        _metricCard('Avg response', s['avg_response_min'] == null ? 'N/A' : '${s['avg_response_min']}m', Icons.timer_outlined, Colors.indigo),
+      ]);
+    } else {
+      cards.addAll([
+        _metricCard('A/B/C work', '${s['maintenance'] ?? 0}', Icons.build_circle_outlined, Colors.indigo),
+        _metricCard('Service hours', '${s['service_hours'] ?? 0} h', Icons.schedule, Colors.teal),
+        _metricCard('Travel hours', '${s['travel_hours'] ?? 0} h', Icons.directions_car_outlined, Colors.blueGrey),
+        _metricCard('Route KM', '${s['route_km'] ?? 0} km', Icons.route_outlined, Colors.deepPurple),
+      ]);
+    }
+    return GridView.count(
+      crossAxisCount: 4,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 4.2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: cards,
+    );
+  }
+
+  Widget _filters() {
+    final statuses = <List<String>>[
+      ['', 'All'],
+      ['DONE', 'Done'],
+      ['ON_ROUTE', 'On route'],
+      ['ON_SITE', 'On site'],
+      ['ON_PLAN', 'On plan'],
+      ['UNASSIGNED', 'Unassigned'],
+      if (_isCallback) ['SLA_NO', 'SLA missed'],
+      if (_isCallback) ['SLA_YES', 'SLA met'],
+    ];
+    final priorities = _isCallback
+        ? <List<String>>[['', 'All priority'], ['AA', 'AA'], ['B', 'B']]
+        : <List<String>>[['', 'All type'], ['A', 'A'], ['B', 'B'], ['C', 'C']];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final item in statuses)
+          ChoiceChip(
+            label: Text(item[1]),
+            selected: _status == item[0],
+            onSelected: (_) { setState(() { _status = item[0]; _page = 1; }); _load(); },
+          ),
+        const SizedBox(width: 12),
+        for (final item in priorities)
+          ChoiceChip(
+            label: Text(item[1]),
+            selected: _priority == item[0],
+            onSelected: (_) { setState(() { _priority = item[0]; _page = 1; }); _load(); },
+          ),
+      ],
+    );
+  }
+
+  Widget _enhancedLogTable(List rows) {
+    final isCb = _isCallback;
+    return Column(children: [
+      Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        color: Colors.grey.shade100,
+        child: Row(children: [
+          const Expanded(flex: 3, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(flex: isCb ? 4 : 5, child: const Text('Unit', style: TextStyle(fontWeight: FontWeight.bold))),
+          const Expanded(flex: 2, child: Text('Type', style: TextStyle(fontWeight: FontWeight.bold))),
+          const Expanded(flex: 3, child: Text('Technician', style: TextStyle(fontWeight: FontWeight.bold))),
+          const Expanded(flex: 3, child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold))),
+          if (isCb) const Expanded(flex: 2, child: Text('Resp.', style: TextStyle(fontWeight: FontWeight.bold))),
+          if (isCb) const Expanded(flex: 2, child: Text('SLA', style: TextStyle(fontWeight: FontWeight.bold))),
+          const Expanded(flex: 2, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+          const Expanded(flex: 2, child: Text('Travel', style: TextStyle(fontWeight: FontWeight.bold))),
+        ]),
+      ),
+      for (final raw in rows) _logRow(Map<String, dynamic>.from(raw as Map), isCb),
+    ]);
+  }
+
+  Widget _logRow(Map<String, dynamic> r, bool isCb) {
+    final status = '${r['status'] ?? ''}';
+    final isUnassigned = status == 'UNASSIGNED';
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      decoration: BoxDecoration(
+        color: isUnassigned ? Colors.red.shade50 : Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(flex: 3, child: Text('${r['date'] ?? ''}', style: const TextStyle(fontSize: 12))),
+          Expanded(
+            flex: isCb ? 4 : 5,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${r['unit_name'] ?? ''}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+              Text('${r['unit_code'] ?? ''} · ${r['task_no'] ?? ''}', style: TextStyle(fontSize: 10, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis),
+            ]),
+          ),
+          Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _typeChip('${r['operation'] ?? ''}', '${r['priority'] ?? r['type'] ?? ''}'))),
+          Expanded(flex: 3, child: Text('${r['technician'] ?? '—'}', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 3, child: Text(_timeText(r), style: const TextStyle(fontSize: 12))),
+          if (isCb) Expanded(flex: 2, child: Text(r['response_min'] == null ? '—' : '${r['response_min']}m', style: const TextStyle(fontSize: 12))),
+          if (isCb) Expanded(flex: 2, child: _slaChip(r['sla_met'])),
+          Expanded(flex: 2, child: _statusChip('${r['status_label'] ?? status}', status)),
+          Expanded(flex: 2, child: Text('${r['travel_min'] ?? 0}m · ${r['route_km'] ?? 0}km', style: TextStyle(fontSize: 11, color: Colors.grey.shade700))),
+        ]),
+        if (isUnassigned && '${r['unassigned_reason'] ?? ''}'.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text('Reason: ${r['unassigned_reason']}', style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+        ],
+      ]),
+    );
+  }
+
+  String _timeText(Map<String, dynamic> r) {
+    if ('${r['status'] ?? ''}' == 'UNASSIGNED') {
+      return '${r['reported'] ?? r['start'] ?? ''} reported';
+    }
+    final rep = '${r['reported'] ?? ''}';
+    final start = '${r['start'] ?? ''}';
+    final end = '${r['end'] ?? ''}';
+    if (_isCallback && rep.isNotEmpty) return 'Rep $rep · $start–$end';
+    return '$start–$end';
+  }
+
+  Widget _metricCard(String label, String value, IconData icon, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.shade100),
+      ),
+      child: Row(children: [
+        CircleAvatar(backgroundColor: color.shade100, child: Icon(icon, color: color.shade700, size: 18)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis),
+          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+        ])),
+      ]),
+    );
+  }
+
+  Widget _scopeChip(String text) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(12)),
+    child: Text(text, style: TextStyle(fontSize: 11, color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+  );
+
+  Widget _typeChip(String operation, String type) {
+    final isCb = operation == 'CALLBACK';
+    final color = isCb ? (type == 'AA' ? Colors.red : Colors.purple) : (type == 'A' ? Colors.red : type == 'B' ? Colors.orange : Colors.green);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: color.shade500, borderRadius: BorderRadius.circular(5)),
+      child: Text(isCb ? 'CB $type' : type, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _statusChip(String label, String status) {
+    final normalized = status.toUpperCase().replaceAll(' ', '_');
+    MaterialColor color = Colors.grey;
+    if (normalized == 'DONE' || normalized == 'COMPLETED') color = Colors.green;
+    if (normalized == 'ON_SITE') color = Colors.blue;
+    if (normalized == 'ON_ROUTE') color = Colors.orange;
+    if (normalized == 'UNASSIGNED' || normalized == 'SLA_MISSED') color = Colors.red;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: color.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: color.shade200)),
+      child: Text(label, style: TextStyle(color: color.shade700, fontSize: 10, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+    );
+  }
+
+  Widget _slaChip(dynamic met) {
+    if (met == null) return const Text('—', style: TextStyle(fontSize: 12));
+    final ok = met == true;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: ok ? Colors.green.shade50 : Colors.red.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: ok ? Colors.green.shade200 : Colors.red.shade200)),
+      child: Text(ok ? 'YES' : 'NO', style: TextStyle(color: ok ? Colors.green.shade700 : Colors.red.shade700, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
 }
 
 // ---------------------------------------------------- Daily Report
 class DailyReportTab extends StatefulWidget {
-  final DateTime activeDate;   // operating-clock day
+  final DateTime activeDate;
+  final DateTime activeTime;
   final bool fullSchedule;
-  const DailyReportTab({super.key, required this.activeDate, this.fullSchedule = false});
+  const DailyReportTab({super.key, required this.activeDate, required this.activeTime, this.fullSchedule = false});
   @override
   State<DailyReportTab> createState() => _DailyReportTabState();
 }
 
 class _DailyReportTabState extends State<DailyReportTab> {
   final ApiClient _api = ApiClient();
+  final TextEditingController _searchCtrl = TextEditingController();
   Map<String, dynamic>? _data;
   bool _loading = true;
   String? _error;
   late String _date;
+  String _search = '';
+  String _status = 'all';
+  String _type = 'all';
 
   @override
   void initState() {
     super.initState();
-    _date = _fmtDate(widget.activeDate); // default to the operating-clock day
+    _date = _fmtDate(widget.activeDate);
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant DailyReportTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newDate = _fmtDate(widget.activeDate);
+
+    // Daily Report live statuses must follow the operating roll clock,
+    // not only the date. Previously this tab used activeDate at midnight,
+    // so the first task of the day stayed ON ROUTE while later tasks stayed
+    // ON PLAN. Reload when the roll date or roll minute changes.
+    final oldMinute = DateTime(
+      oldWidget.activeTime.year, oldWidget.activeTime.month, oldWidget.activeTime.day,
+      oldWidget.activeTime.hour, oldWidget.activeTime.minute,
+    );
+    final newMinute = DateTime(
+      widget.activeTime.year, widget.activeTime.month, widget.activeTime.day,
+      widget.activeTime.hour, widget.activeTime.minute,
+    );
+
+    if (!widget.fullSchedule && (newDate != _date || newMinute != oldMinute)) {
+      _date = newDate;
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   String _fmtDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  String get _asOf => widget.fullSchedule ? kFullAsOf : widget.activeTime.toIso8601String();
+
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
       final d = await _api.fetchDailyReport(
-          date: _date, asOf: widget.fullSchedule ? kFullAsOf : '');
+        date: _date,
+        asOf: _asOf,
+        search: _search,
+        status: _status,
+        type: _type,
+      );
+      final gtype = '${d['group_type'] ?? ''}';
+      if (gtype == 'callback' && !['all', 'AA', 'B'].contains(_type)) {
+        _type = 'all';
+      }
+      if (gtype == 'maintenance' && !['all', 'A', 'B', 'C'].contains(_type)) {
+        _type = 'all';
+      }
       setState(() { _data = d; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -3841,46 +5383,55 @@ class _DailyReportTabState extends State<DailyReportTab> {
       context: context,
       initialDate: DateTime.tryParse(_date) ?? widget.activeDate,
       firstDate: DateTime(2026, 1, 1),
-      lastDate: widget.fullSchedule
-          ? DateTime(2099, 12, 31) // full plan: any day in the generated schedule
-          : widget.activeDate,     // can't look past the operating-clock day
+      lastDate: widget.fullSchedule ? DateTime(2099, 12, 31) : widget.activeDate,
     );
     if (picked != null) {
-      _date = _fmtDate(picked);
+      setState(() => _date = _fmtDate(picked));
       _load();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final faults = ((_data?['faults'] as List?) ?? []);
-    final techs = ((_data?['technicians'] as List?) ?? []);
     final gtype = '${_data?['group_type'] ?? ''}';
-    // faults/breakdowns are a callback concept -> only show for callback or
-    // mixed HQs, never for a maintenance-only HQ.
-    final showFaults = gtype == 'callback' || gtype == 'mixed';
+    final isCallback = gtype == 'callback';
+    final summary = Map<String, dynamic>.from((_data?['summary'] as Map?) ?? {});
+    final rows = ((_data?['rows'] as List?) ?? []);
+    final techs = ((_data?['technicians'] as List?) ?? []);
+
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(children: [
-            Icon(Icons.today, color: Colors.orange.shade800),
+            Icon(Icons.today, color: isCallback ? Colors.red.shade700 : Colors.orange.shade800),
             const SizedBox(width: 8),
-            const Text('Daily Supervisor Report',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(widget.fullSchedule ? 'Full · Daily Supervisor Report' : 'Daily Supervisor Report',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             if (gtype.isNotEmpty) ...[
               const SizedBox(width: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text('$gtype HQ',
-                    style: TextStyle(color: Colors.blue.shade800, fontSize: 11)),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(6)),
+                child: Text('$gtype HQ', style: TextStyle(color: Colors.blue.shade800, fontSize: 11)),
               ),
             ],
             const Spacer(),
+            SizedBox(
+              width: 280,
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: const InputDecoration(
+                  hintText: 'Search unit / tech / task...',
+                  isDense: true,
+                  prefixIcon: Icon(Icons.search, size: 18),
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (v) { _search = v.trim(); _load(); },
+              ),
+            ),
+            const SizedBox(width: 10),
+            IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
             OutlinedButton.icon(
               onPressed: _pickDate,
               icon: const Icon(Icons.calendar_today, size: 16),
@@ -3893,90 +5444,323 @@ class _DailyReportTabState extends State<DailyReportTab> {
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
                     ? Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.red)))
-                    : ListView(children: [
-                        Row(children: [
-                          _statCard('Total Visits', '${_data?['total_visits'] ?? 0}', Colors.blue),
-                          if (showFaults) ...[
-                            const SizedBox(width: 12),
-                            _statCard('Faults / Breakdowns', '${_data?['fault_count'] ?? 0}', Colors.red),
-                          ],
-                        ]),
-                        const SizedBox(height: 18),
-                        if (showFaults) ...[
-                          Text("Faults & Breakdowns (${faults.length})",
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                          const SizedBox(height: 8),
-                          if (faults.isEmpty)
-                            Text('No faults/breakdowns recorded on this date.',
-                                style: TextStyle(color: Colors.grey.shade500, fontSize: 13))
+                    : ListView(
+                        children: [
+                          Text(
+                            widget.fullSchedule
+                                ? 'Full-day scope for $_date. Statuses use the generated daily plan.'
+                                : 'Roll-date scope for $_date. Live statuses use the selected roll date/time.',
+                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                          ),
+                          const SizedBox(height: 12),
+                          _summaryGrid(summary, isCallback),
+                          const SizedBox(height: 10),
+                          _filterRow(isCallback),
+                          const SizedBox(height: 10),
+                          if (isCallback)
+                            _incidentTable(rows)
                           else
-                            _taskTable(faults),
-                          const SizedBox(height: 22),
+                            _technicianDailyBlocks(techs, rows),
                         ],
-                        Text("Technician Locations Visited (${techs.length} techs)",
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                        const SizedBox(height: 8),
-                        if (techs.isEmpty)
-                          Text('No activity on this date.',
-                              style: TextStyle(color: Colors.grey.shade500, fontSize: 13))
-                        else
-                          for (final tRaw in techs) _techBlock(Map<String, dynamic>.from(tRaw as Map)),
-                      ]),
+                      ),
           ),
         ],
       ),
     );
   }
 
-  Widget _statCard(String label, String value, MaterialColor c) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: c.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: c.shade200),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: c.shade800)),
-            Text(label, style: TextStyle(fontSize: 12, color: c.shade700)),
-          ],
-        ),
-      ),
+  Widget _summaryGrid(Map<String, dynamic> s, bool isCallback) {
+    final cards = isCallback
+        ? [
+            _DailyCard('Callbacks', _fmtNum(s['tasks']), Icons.warning_amber, Colors.red, subtitle: 'AA ${s['aa'] ?? 0} · B ${s['b'] ?? 0}'),
+            _DailyCard('SLA success', _pctOrDash(s['sla_pct']), Icons.verified_outlined, Colors.green, subtitle: '${s['sla_met'] ?? 0}/${s['sla_total'] ?? 0} inside window'),
+            _DailyCard('Avg response', _minOrDash(s['avg_response_min']), Icons.speed, Colors.orange, subtitle: 'reported → arrival'),
+            _DailyCard('Unassigned', _fmtNum(s['unassigned']), Icons.report_problem_outlined, Colors.red, subtitle: 'callback backlog'),
+            _DailyCard('Duty hours', '${_fmtDec(s['duty_hours'])} h', Icons.timer, Colors.teal, subtitle: 'service + travel'),
+            _DailyCard('Travel / Route', '${_fmtDec(s['travel_hours'])} h', Icons.directions_car, Colors.blue, subtitle: '${_fmtDec(s['route_km'])} km'),
+          ]
+        : [
+            _DailyCard('Maintenance tasks', _fmtNum(s['tasks']), Icons.fact_check_outlined, Colors.blue, subtitle: 'A ${s['a'] ?? 0} · B ${s['b'] ?? 0} · C ${s['c'] ?? 0}'),
+            _DailyCard('Completed', _fmtNum(s['done']), Icons.check_circle_outline, Colors.green, subtitle: '${s['active'] ?? 0} active now'),
+            _DailyCard('Remaining', _fmtNum(s['on_plan']), Icons.event_note, Colors.orange, subtitle: 'planned after roll time'),
+            _DailyCard('Unassigned', _fmtNum(s['unassigned']), Icons.report_problem_outlined, Colors.red, subtitle: 'maintenance backlog'),
+            _DailyCard('Service hours', '${_fmtDec(s['service_hours'])} h', Icons.timer, Colors.teal, subtitle: '${s['technicians'] ?? 0} technicians'),
+            _DailyCard('Travel / Route', '${_fmtDec(s['travel_hours'])} h', Icons.directions_car, Colors.blue, subtitle: '${_fmtDec(s['route_km'])} km'),
+          ];
+    return GridView.count(
+      crossAxisCount: 3,
+      childAspectRatio: 4.4,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: cards,
     );
   }
 
-  Widget _techBlock(Map<String, dynamic> t) {
-    final locs = ((t['locations'] as List?) ?? []);
-    return ExpansionTile(
-      title: Text('${t['technician']}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-      subtitle: Text('${t['stops']} stops'),
+  Widget _filterRow(bool isCallback) {
+    final statuses = [
+      ['all', 'All'],
+      ['DONE', 'Done'],
+      ['ON_ROUTE', 'On route'],
+      ['ON_SITE', 'On site'],
+      ['ON_PLAN', 'On plan'],
+      ['UNASSIGNED', 'Unassigned'],
+      if (isCallback) ['SLA_MISSED', 'SLA missed'],
+      if (isCallback) ['SLA_MET', 'SLA met'],
+    ];
+    final types = isCallback
+        ? [['all', 'All type'], ['AA', 'AA'], ['B', 'B']]
+        : [['all', 'All type'], ['A', 'A'], ['B', 'B'], ['C', 'C']];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        for (final lRaw in locs)
+        for (final item in statuses)
+          ChoiceChip(
+            label: Text(item[1]),
+            selected: _status == item[0],
+            onSelected: (_) { setState(() => _status = item[0]); _load(); },
+          ),
+        const SizedBox(width: 12),
+        for (final item in types)
+          ChoiceChip(
+            label: Text(item[1]),
+            selected: _type == item[0],
+            onSelected: (_) { setState(() => _type = item[0]); _load(); },
+          ),
+      ],
+    );
+  }
+
+  Widget _incidentTable(List rows) {
+    if (rows.isEmpty) return const _EmptyStateText('No callback incidents match the selected filters.');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _tableHeader(['Date', 'Unit', 'Priority', 'Technician', 'Reported', 'Scheduled', 'Response', 'SLA', 'Status', 'Travel']),
+        for (final raw in rows)
           Builder(builder: (_) {
-            final l = Map<String, dynamic>.from(lRaw as Map);
-            final isCb = l['kind'] == 'Callback';
-            return ListTile(
-              dense: true,
-              leading: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isCb ? Colors.purple.shade400 : Colors.green.shade600,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(isCb ? 'CB ${l['type']}' : '${l['type']}',
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+            final r = Map<String, dynamic>.from(raw as Map);
+            final unassigned = r['is_unassigned'] == true;
+            return Container(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                color: unassigned ? Colors.red.shade50.withOpacity(.45) : null,
               ),
-              title: Text('${l['unit_name']}', style: const TextStyle(fontSize: 13)),
-              subtitle: Text('${l['unit_code']}', style: const TextStyle(fontSize: 11)),
-              trailing: Text('${l['start']}–${l['end'] ?? ''}', style: const TextStyle(fontSize: 12)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(children: [
+                _cell('${r['date']}', flex: 1),
+                _cellTitle('${r['unit']}', '${r['unit_code']} · ${r['task_no']}', flex: 3),
+                Expanded(flex: 1, child: Align(alignment: Alignment.centerLeft, child: _typeBadge('${r['type']}', true))),
+                _cell('${r['technician']}', flex: 2),
+                _cell(_dash(r['reported']), flex: 1),
+                _cell('${_dash(r['start'])}${r['end'] != null && '${r['end']}'.isNotEmpty ? '–${r['end']}' : ''}', flex: 2),
+                _cell(_minOrDash(r['response_min']), flex: 1),
+                Expanded(flex: 1, child: Align(alignment: Alignment.centerLeft, child: _slaChip(r['sla_met']))),
+                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _statusChip('${r['status']}'))),
+                _cell(_travelText(r), flex: 1),
+              ]),
             );
           }),
       ],
     );
   }
+
+  Widget _technicianDailyBlocks(List techs, List rows) {
+    if (techs.isEmpty && rows.isEmpty) return const _EmptyStateText('No maintenance work matches the selected filters.');
+    final unassigned = rows.where((r) => (r as Map)['is_unassigned'] == true).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (unassigned.isNotEmpty) ...[
+          Text('Unassigned maintenance backlog (${unassigned.length})',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade800)),
+          const SizedBox(height: 6),
+          _maintenanceRows(unassigned.cast<Map>()),
+          const SizedBox(height: 16),
+        ],
+        Text('Technician workload (${techs.length} techs)',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        const SizedBox(height: 8),
+        for (final raw in techs)
+          Builder(builder: (_) {
+            final t = Map<String, dynamic>.from(raw as Map);
+            final items = ((t['rows'] as List?) ?? []).cast<Map>();
+            return ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text('${t['technician']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('${t['stops']} stops · ${_fmtDec(t['duty_hours'])} duty h · ${_fmtDec(t['route_km'])} km'),
+              trailing: _workloadSignal(t),
+              children: [_maintenanceRows(items)],
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _maintenanceRows(List<Map> rows) {
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _tableHeader(['Date', 'Unit', 'Type', 'Time', 'Status', 'Travel']),
+        for (final raw in rows)
+          Builder(builder: (_) {
+            final r = Map<String, dynamic>.from(raw);
+            return Container(
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(children: [
+                _cell('${r['date']}', flex: 1),
+                _cellTitle('${r['unit']}', '${r['unit_code']} · ${r['task_no']}', flex: 4),
+                Expanded(flex: 1, child: Align(alignment: Alignment.centerLeft, child: _typeBadge('${r['type']}', false))),
+                _cell('${_dash(r['start'])}${r['end'] != null && '${r['end']}'.isNotEmpty ? '–${r['end']}' : ''}', flex: 2),
+                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _statusChip('${r['status']}'))),
+                _cell(_travelText(r), flex: 1),
+              ]),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _tableHeader(List<String> labels) {
+    final flexes = labels.length == 10
+        ? [1, 3, 1, 2, 1, 2, 1, 1, 2, 1]
+        : [1, 4, 1, 2, 2, 1];
+    return Container(
+      color: Colors.grey.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      child: Row(children: [
+        for (int i = 0; i < labels.length; i++)
+          Expanded(flex: flexes[i], child: Text(labels[i], style: const TextStyle(fontWeight: FontWeight.bold))),
+      ]),
+    );
+  }
+
+  Widget _cell(String text, {int flex = 1}) => Expanded(
+        flex: flex,
+        child: Text(text, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+      );
+
+  Widget _cellTitle(String title, String sub, {int flex = 2}) => Expanded(
+        flex: flex,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13), overflow: TextOverflow.ellipsis),
+          Text(sub, style: TextStyle(color: Colors.grey.shade600, fontSize: 11), overflow: TextOverflow.ellipsis),
+        ]),
+      );
+
+  Widget _typeBadge(String text, bool callback) {
+    final isAA = text == 'AA';
+    final color = callback ? (isAA ? Colors.red : Colors.purple) : Colors.green;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: color.shade500, borderRadius: BorderRadius.circular(5)),
+      child: Text(callback ? 'CB $text' : text, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _slaChip(dynamic met) {
+    if (met == true) return _smallChip('SLA YES', Colors.green);
+    if (met == false) return _smallChip('SLA NO', Colors.red);
+    return Text('N/A', style: TextStyle(color: Colors.grey.shade500, fontSize: 12));
+  }
+
+  Widget _statusChip(String status) {
+    final s = status.toUpperCase();
+    if (s == 'DONE') return _smallChip('Done', Colors.green);
+    if (s == 'ON_ROUTE') return _smallChip('On route', Colors.orange);
+    if (s == 'ON_SITE') return _smallChip('On site', Colors.blue);
+    if (s == 'ON_PLAN') return _smallChip('On plan', Colors.grey);
+    if (s == 'UNASSIGNED') return _smallChip('Unassigned', Colors.red);
+    return _smallChip(status, Colors.grey);
+  }
+
+  Widget _smallChip(String text, MaterialColor color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.shade50,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.shade200),
+        ),
+        child: Text(text, style: TextStyle(color: color.shade800, fontSize: 11, fontWeight: FontWeight.w600)),
+      );
+
+  Widget _workloadSignal(Map<String, dynamic> t) {
+    final duty = _toDouble(t['duty_hours']);
+    MaterialColor c = Colors.green;
+    String label = 'Balanced';
+    if (duty < 5) { c = Colors.orange; label = 'Low'; }
+    if (duty > 8.5) { c = Colors.red; label = 'High'; }
+    return _smallChip('$label · ${_fmtDec(duty)} h', c);
+  }
+
+  String _travelText(Map<String, dynamic> r) {
+    final min = r['travel_min'];
+    final km = r['route_km'];
+    final minText = min == null ? '—' : '${min}m';
+    final kmVal = _toDouble(km);
+    final kmText = km == null || kmVal <= 0 ? '— km' : '${_fmtDec(kmVal)} km';
+    return '$minText · $kmText';
+  }
+
+  String _dash(dynamic v) {
+    final text = '${v ?? ''}'.trim();
+    return text.isEmpty ? '—' : text;
+  }
+
+  String _fmtNum(dynamic v) => '${v ?? 0}';
+  double _toDouble(dynamic v) { try { return v == null ? 0 : (v as num).toDouble(); } catch (_) { return double.tryParse('$v') ?? 0; } }
+  String _fmtDec(dynamic v) {
+    final d = _toDouble(v);
+    if (d == 0) return '0';
+    if ((d - d.round()).abs() < .05) return '${d.round()}';
+    return d.toStringAsFixed(1);
+  }
+  String _pctOrDash(dynamic v) => v == null ? 'N/A' : '${_fmtDec(v)}%';
+  String _minOrDash(dynamic v) => v == null ? '—' : '${v}m';
+}
+
+class _DailyCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final MaterialColor color;
+  final String subtitle;
+  const _DailyCard(this.title, this.value, this.icon, this.color, {required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.shade200),
+      ),
+      child: Row(children: [
+        CircleAvatar(backgroundColor: color.shade100, child: Icon(icon, color: color.shade700, size: 19)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(title, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+          Text(value, style: TextStyle(color: color.shade900, fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(subtitle, style: TextStyle(color: Colors.grey.shade600, fontSize: 11), overflow: TextOverflow.ellipsis),
+        ])),
+      ]),
+    );
+  }
+}
+
+class _EmptyStateText extends StatelessWidget {
+  final String text;
+  const _EmptyStateText(this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(22),
+        child: Center(child: Text(text, style: TextStyle(color: Colors.grey.shade600))),
+      );
 }
 
 // ---------------------------------------------------- Dispatch (real-time callback)
@@ -3990,145 +5774,85 @@ class DispatchTab extends StatefulWidget {
 class _DispatchTabState extends State<DispatchTab> {
   final TextEditingController _unitSearchCtrl = TextEditingController();
   final TextEditingController _descCtrl = TextEditingController();
-  Timer? _searchDebounce;
-
-  String _priority = 'B';
-  bool _searching = false;
-  bool _previewing = false;
+  String _priority = 'NORMAL';
   bool _dispatching = false;
-  String? _error;
-
-  List<DispatchUnit> _unitResults = [];
-  DispatchUnit? _selectedUnit;
-  DispatchPreview? _preview;
+  bool _loadingUnits = true;
   DispatchResult? _result;
+  String? _error;
+  List<DispatchUnitOption> _units = [];
+  DispatchUnitOption? _selectedUnit;
 
   @override
   void initState() {
     super.initState();
-    // Keep dispatch clean: do not load a random unit list before the user searches.
+    _loadUnits();
+    _unitSearchCtrl.addListener(() => setState(() {}));
+  }
+
+  Future<void> _loadUnits() async {
+    setState(() { _loadingUnits = true; _error = null; });
+    try {
+      final units = await widget.controller.fetchDispatchUnits();
+      setState(() {
+        _units = units;
+        _loadingUnits = false;
+        if (_selectedUnit != null && !_units.any((u) => u.id == _selectedUnit!.id)) {
+          _selectedUnit = null;
+        }
+      });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loadingUnits = false; });
+    }
   }
 
   @override
   void dispose() {
-    _searchDebounce?.cancel();
     _unitSearchCtrl.dispose();
     _descCtrl.dispose();
     super.dispose();
   }
 
-  void _onSearchChanged(String value) {
-    _searchDebounce?.cancel();
-    final q = value.trim();
-    setState(() {
-      _selectedUnit = null;
-      _result = null;
-      _error = null;
-      if (q.length < 2) {
-        _unitResults = [];
-        _searching = false;
-      }
-    });
-    if (q.length < 2) return;
-    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-      _searchUnits(q);
-    });
-  }
-
-  Future<void> _searchUnits(String q) async {
-    if (q.trim().length < 2) {
-      setState(() {
-        _unitResults = [];
-        _searching = false;
-      });
-      return;
+  List<DispatchUnitOption> get _filteredUnits {
+    final q = _unitSearchCtrl.text.trim().toLowerCase();
+    var list = _units;
+    if (q.isNotEmpty) {
+      list = list.where((u) {
+        return u.name.toLowerCase().contains(q)
+            || u.code.toLowerCase().contains(q)
+            || u.address.toLowerCase().contains(q)
+            || u.city.toLowerCase().contains(q);
+      }).toList();
     }
-    setState(() {
-      _searching = true;
-      _error = null;
+    list.sort((a, b) {
+      final backlogCmp = b.unassignedCallbackCount.compareTo(a.unassignedCallbackCount);
+      if (backlogCmp != 0) return backlogCmp;
+      return a.name.compareTo(b.name);
     });
-    try {
-      final results = await widget.controller.searchDispatchUnits(q);
-      if (!mounted) return;
-      setState(() {
-        _unitResults = results.take(6).toList();
-        _searching = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _searching = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  Future<void> _previewCandidates() async {
-    final unit = _selectedUnit;
-    if (unit == null) {
-      setState(() => _error = 'Pick an existing unit first.');
-      return;
-    }
-    setState(() {
-      _previewing = true;
-      _error = null;
-      _preview = null;
-      _result = null;
-    });
-    try {
-      final preview = await widget.controller.previewDispatch(
-        unitId: unit.id,
-        priority: _priority,
-      );
-      if (!mounted) return;
-      setState(() {
-        _preview = preview;
-        _previewing = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _previewing = false;
-        _error = e.toString();
-      });
-    }
+    return list.take(12).toList();
   }
 
   Future<void> _dispatch() async {
-    final unit = _selectedUnit;
-    if (unit == null) {
-      setState(() => _error = 'Pick an existing unit first.');
+    if (_selectedUnit == null) {
+      setState(() { _error = 'Select an existing unit before dispatching.'; });
       return;
     }
-    setState(() {
-      _dispatching = true;
-      _error = null;
-      _result = null;
-    });
+    setState(() { _dispatching = true; _error = null; _result = null; });
     try {
-      final res = await widget.controller.dispatchUnit(
-        unitId: unit.id,
+      final res = await widget.controller.dispatch(
+        unitId: _selectedUnit!.id,
         priority: _priority,
+        faultType: _priority == 'AA' ? 'Elevator Entrapment' : 'Elevator Fault',
         description: _descCtrl.text.trim(),
       );
-      if (!mounted) return;
-      setState(() {
-        _result = res;
-        _dispatching = false;
-      });
+      setState(() { _result = res; _dispatching = false; });
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _dispatching = false;
-      });
+      setState(() { _error = e.toString(); _dispatching = false; });
     }
   }
 
-  String _priorityLabel(String p) => p == 'AA' ? 'AA — Entrapment (1hr SLA)' : 'B — Normal (4hr SLA)';
-
   @override
   Widget build(BuildContext context) {
+    final filtered = _filteredUnits;
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4136,7 +5860,7 @@ class _DispatchTabState extends State<DispatchTab> {
           Row(children: [
             Icon(Icons.send, color: Colors.deepOrange.shade700),
             const SizedBox(width: 8),
-            const Text('Real-Time Callback Dispatch',
+            const Text('Dispatch Callback',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ]),
           const SizedBox(height: 6),
@@ -4145,44 +5869,114 @@ class _DispatchTabState extends State<DispatchTab> {
             decoration: BoxDecoration(
               color: Colors.blue.shade50,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.blue.shade100),
+              border: Border.all(color: Colors.blue.shade200),
             ),
-            child: Row(children: [
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.info_outline, size: 16, color: Colors.blue.shade800),
               const SizedBox(width: 8),
               Expanded(child: Text(
-                'Search and select an existing unit, choose the priority, then dispatch. '
-                'The backend selects the best available callback technician. Google road travel '
-                'time is used when enabled; otherwise it safely falls back to straight-line estimates.',
+                'Select an existing portfolio unit. Dispatch uses the unit\'s saved coordinates, then assigns the nearest / lowest-added-route callback technician.',
                 style: TextStyle(fontSize: 12, color: Colors.blue.shade900))),
             ]),
           ),
           const SizedBox(height: 16),
-
           TextField(
             controller: _unitSearchCtrl,
-            onChanged: _onSearchChanged,
             decoration: InputDecoration(
-              labelText: 'Search existing unit / building / unit code',
-              hintText: 'e.g. Palladium, Maslak, FM903173',
+              labelText: 'Search existing unit by name, code, address...',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : null,
+              suffixIcon: IconButton(
+                tooltip: 'Reload units',
+                onPressed: _loadUnits,
+                icon: const Icon(Icons.refresh),
+              ),
               isDense: true,
               border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 8),
-          _unitPicker(),
+          if (_loadingUnits)
+            const LinearProgressIndicator(minHeight: 3)
+          else
+            Container(
+              constraints: const BoxConstraints(maxHeight: 260),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: filtered.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No existing units match this search.'),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                      itemBuilder: (context, i) {
+                        final u = filtered[i];
+                        final selected = _selectedUnit?.id == u.id;
+                        return ListTile(
+                          dense: true,
+                          selected: selected,
+                          selectedTileColor: Colors.blue.shade50,
+                          leading: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: selected ? Colors.blue.shade700 : Colors.grey.shade200,
+                            child: Icon(Icons.business, size: 17, color: selected ? Colors.white : Colors.grey.shade700),
+                          ),
+                          title: Text(u.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          subtitle: Text([
+                            u.code,
+                            u.unitType,
+                            if (u.city.isNotEmpty) u.city,
+                            '${u.latitude.toStringAsFixed(5)}, ${u.longitude.toStringAsFixed(5)}',
+                          ].where((x) => x.isNotEmpty).join(' · ')),
+                          trailing: Wrap(spacing: 6, children: [
+                            if (u.unassignedCallbackCount > 0)
+                              Chip(
+                                label: Text('${u.unassignedCallbackCount} backlog'),
+                                visualDensity: VisualDensity.compact,
+                                backgroundColor: Colors.red.shade50,
+                                labelStyle: TextStyle(fontSize: 11, color: Colors.red.shade800, fontWeight: FontWeight.w700),
+                              ),
+                            if (u.callbackCount > 0)
+                              Chip(
+                                label: Text('${u.callbackCount} cb'),
+                                visualDensity: VisualDensity.compact,
+                                backgroundColor: Colors.purple.shade50,
+                                labelStyle: TextStyle(fontSize: 11, color: Colors.purple.shade800),
+                              ),
+                          ]),
+                          onTap: () => setState(() => _selectedUnit = u),
+                        );
+                      },
+                    ),
+            ),
           if (_selectedUnit != null) ...[
-            const SizedBox(height: 12),
-            _selectedUnitCard(_selectedUnit!),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.location_on, color: Colors.green.shade700),
+                const SizedBox(width: 8),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_selectedUnit!.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text('Using saved unit location: ${_selectedUnit!.latitude.toStringAsFixed(5)}, ${_selectedUnit!.longitude.toStringAsFixed(5)}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                  ],
+                )),
+              ]),
+            ),
           ],
-
           const SizedBox(height: 12),
           Row(children: [
             const Text('Priority:', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -4191,13 +5985,13 @@ class _DispatchTabState extends State<DispatchTab> {
               label: const Text('AA — Entrapment (1hr)'),
               selected: _priority == 'AA',
               selectedColor: Colors.red.shade100,
-              onSelected: (_) => setState(() { _priority = 'AA'; _preview = null; _result = null; }),
+              onSelected: (_) => setState(() => _priority = 'AA'),
             ),
             const SizedBox(width: 8),
             ChoiceChip(
-              label: const Text('B — Normal (4hr)'),
-              selected: _priority == 'B',
-              onSelected: (_) => setState(() { _priority = 'B'; _preview = null; _result = null; }),
+              label: const Text('Normal B (4hr)'),
+              selected: _priority == 'NORMAL',
+              onSelected: (_) => setState(() => _priority = 'NORMAL'),
             ),
           ]),
           const SizedBox(height: 12),
@@ -4205,18 +5999,16 @@ class _DispatchTabState extends State<DispatchTab> {
             controller: _descCtrl,
             decoration: const InputDecoration(
               labelText: 'Fault description (optional)',
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
+              isDense: true, border: OutlineInputBorder()),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: (_selectedUnit == null || _dispatching) ? null : _dispatch,
+            onPressed: (_dispatching || _selectedUnit == null) ? null : _dispatch,
             icon: _dispatching
                 ? const SizedBox(height: 16, width: 16,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.send, size: 18),
-            label: Text(_dispatching ? 'Dispatching...' : 'Dispatch selected unit callback'),
+            label: Text(_selectedUnit == null ? 'Select a unit first' : 'Dispatch to nearest technician'),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.deepOrange.shade700,
               minimumSize: const Size(0, 48),
@@ -4228,133 +6020,6 @@ class _DispatchTabState extends State<DispatchTab> {
           if (_result != null) _resultCard(_result!),
         ],
       ),
-    );
-  }
-
-  Widget _unitPicker() {
-    final q = _unitSearchCtrl.text.trim();
-    if (_selectedUnit != null) {
-      return const SizedBox.shrink();
-    }
-    if (q.length < 2 && !_searching) {
-      return Text('Type at least 2 characters to search units.', style: TextStyle(color: Colors.grey.shade600));
-    }
-    if (_unitResults.isEmpty && !_searching) {
-      return Text('No matching units found.', style: TextStyle(color: Colors.grey.shade600));
-    }
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 180),
-      child: ListView.separated(
-        shrinkWrap: true,
-        itemCount: _unitResults.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          final u = _unitResults[i];
-          final selected = _selectedUnit?.id == u.id;
-          return ListTile(
-            dense: true,
-            selected: selected,
-            leading: Icon(u.unitType == 'ESCALATOR' ? Icons.stairs : Icons.elevator,
-                color: selected ? Colors.blue.shade800 : Colors.grey.shade600),
-            title: Text(u.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text('${u.unitCode} • ${u.region} • ${u.district ?? ''}',
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: selected ? const Icon(Icons.check_circle, color: Colors.green) : null,
-            onTap: () {
-              setState(() {
-                _selectedUnit = u;
-                _unitSearchCtrl.text = '${u.title} (${u.unitCode})';
-                _unitResults = [];
-                _preview = null;
-                _result = null;
-                _error = null;
-              });
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _selectedUnitCard(DispatchUnit unit) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.shade50,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange.shade200),
-      ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(Icons.place, color: Colors.deepOrange.shade700),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Selected unit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
-          const SizedBox(height: 2),
-          Text(unit.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 2),
-          Text(unit.subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
-          const SizedBox(height: 2),
-          Text('${unit.latitude.toStringAsFixed(5)}, ${unit.longitude.toStringAsFixed(5)} • ${unit.region}',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-        ])),
-        TextButton(
-          onPressed: () {
-            setState(() {
-              _selectedUnit = null;
-              _unitSearchCtrl.clear();
-              _unitResults = [];
-              _result = null;
-              _error = null;
-            });
-          },
-          child: const Text('Change'),
-        ),
-      ]),
-    );
-  }
-
-  Widget _previewCard(DispatchPreview p) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.indigo.shade50,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.indigo.shade100),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(Icons.route, color: Colors.indigo.shade700, size: 18),
-          const SizedBox(width: 6),
-          Expanded(child: Text('${_priorityLabel(_priority)} • ${p.faultType}',
-              style: const TextStyle(fontWeight: FontWeight.bold))),
-        ]),
-        const SizedBox(height: 4),
-        Text(p.sourceNote, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
-        const SizedBox(height: 10),
-        for (final c in p.candidates.take(8))
-          Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: c.winner ? Colors.green.shade50 : Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: c.winner ? Colors.green.shade300 : Colors.grey.shade200),
-            ),
-            child: Row(children: [
-              CircleAvatar(radius: 14, child: Text(c.name.isEmpty ? '?' : c.name[0])),
-              const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text('${c.group} • ${c.currentStops} current stops • ${c.source}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-              ])),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text('${c.durationMin} min', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('${c.distanceKm.toStringAsFixed(1)} km', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-              ]),
-            ]),
-          ),
-      ]),
     );
   }
 
@@ -4376,6 +6041,8 @@ class _DispatchTabState extends State<DispatchTab> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           ]),
           const SizedBox(height: 8),
+          if (r.unitName.isNotEmpty)
+            Text('Unit: ${r.unitName}', style: const TextStyle(fontWeight: FontWeight.w600)),
           Text('Assigned to: ${r.assignedToName}',
               style: const TextStyle(fontWeight: FontWeight.w600)),
           Text('Priority: ${r.priority}', style: TextStyle(color: Colors.grey.shade700)),
@@ -4384,6 +6051,15 @@ class _DispatchTabState extends State<DispatchTab> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(r.reason, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
             ),
+          if (r.scoreboard.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('Candidate ranking', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+            const SizedBox(height: 4),
+            ...r.scoreboard.take(5).map((row) => Text(
+              '${row['name']}  +${row['km_from_dispatch'] ?? row['added_km']} km',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            )),
+          ],
         ],
       ),
     );

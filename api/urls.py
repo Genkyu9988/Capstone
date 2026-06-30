@@ -1,8 +1,9 @@
 from django.urls import path, include
-from .admin_views import AdminHQListView, AdminHQStateView, AdminGenerateView
 from rest_framework.routers import DefaultRouter
 from api.demo_showcase_views import ShowcaseRoutesView
 from .simulation_run_views import SimulationRunView
+from .simulation_reset_views import SimulationResetView
+from .admin_views import AdminHQListView, AdminHQStateView, AdminGenerateView
 from .location_views import MyLocationUpdateView
 from .clock_views import SetClockView
 from .views import MyOptimizedRouteView
@@ -27,6 +28,7 @@ from .simulation_views import SimulationRoutesView, SimulationMapView, Simulatio
 from .dashboard_views import DemoDashboardStateView
 from .add_technician_view import (
     AddTechnicianView, RemoveTechnicianView, ReactivateTechnicianView,
+    TechnicianChangeImpactPreviewView,
 )
 from .report_views import (
     ReportMonthsView, MonthlyReportView, MonthlyReportExportView,
@@ -35,9 +37,12 @@ from .unit_history_views import (
     UnitHistorySummaryView, UnitHistoryDetailView, UnitHistoryExportView,
 )
 from .overview_views import (
-    MaintenanceOverviewView, CallbackOverviewView, MonthlyLogView, DailyReportView,
+    MaintenanceOverviewView, CallbackOverviewView,
 )
-from .repair_views import RepairPanelView, RepairDispatchView, ClearRepairsView, DispatchUnitSearchView, DispatchPreviewView
+from .daily_report_views import DailyReportView
+from .repair_views import RepairPanelView, RepairDispatchView, RepairDispatchUnitsView, ClearRepairsView
+from .callback_incident_views import CallbackIncidentCenterView, CallbackIncidentExportView
+from .monthly_log_views import MonthlyLogView
 
 router = DefaultRouter()
 router.register(r"groups", SupervisorGroupViewSet, basename="group")
@@ -55,6 +60,7 @@ urlpatterns = [
     # technician management -- BEFORE the router so these aren't shadowed by
     # the router's technicians/<pk>/ detail routes
     path("technicians/add/", AddTechnicianView.as_view()),
+    path("technicians/impact-preview/", TechnicianChangeImpactPreviewView.as_view()),
     path("technicians/<int:pk>/remove/", RemoveTechnicianView.as_view()),
     path("technicians/<int:pk>/reactivate/", ReactivateTechnicianView.as_view()),
     # reports + unit history -- BEFORE the router so the units/ and technicians/
@@ -66,7 +72,8 @@ urlpatterns = [
     path("units/history/export/", UnitHistoryExportView.as_view()),
     path("units/<int:unit_id>/history/", UnitHistoryDetailView.as_view()),
     path("overview/maintenance/", MaintenanceOverviewView.as_view()),
-    path("overview/callbacks/", CallbackOverviewView.as_view()),
+    path("overview/callbacks/", CallbackIncidentCenterView.as_view()),
+    path("overview/callbacks/export/", CallbackIncidentExportView.as_view()),
     path("overview/monthly-log/", MonthlyLogView.as_view()),
     path("overview/daily-report/", DailyReportView.as_view()),
     path("demo/showcase-routes/", ShowcaseRoutesView.as_view(), name="showcase-routes"),
@@ -82,13 +89,13 @@ urlpatterns = [
     path("simulation/map/", SimulationMapView.as_view()),
     path("simulation/demo-routes/", SimulationDemoRoutesView.as_view()),
     path("repair/panel/", RepairPanelView.as_view()),
-    path("repair/units/search/", DispatchUnitSearchView.as_view()),
-    path("repair/dispatch/preview/", DispatchPreviewView.as_view()),
     path("repair/dispatch/", RepairDispatchView.as_view()),
+    path("repair/dispatch-units/", RepairDispatchUnitsView.as_view()),
     path("simulation/run/", SimulationRunView.as_view(), name="simulation-run"),
     path("repair/clear/", ClearRepairsView.as_view()),
     path("my-location/", MyLocationUpdateView.as_view(), name="my-location"),
     path("clock/set/", SetClockView.as_view(), name="set-clock"),
+    path("simulation/reset/", SimulationResetView.as_view(), name="simulation-reset"),
     path("admin/hqs/", AdminHQListView.as_view()),
     path("admin/hq-state/", AdminHQStateView.as_view()),
     path("admin/generate/", AdminGenerateView.as_view()),
